@@ -20,7 +20,7 @@ import Data.Aeson (ToJSON)
 import Data.Map qualified as M
 import GHC.Generics (Generic)
 import NITTA.Intermediate.Analysis (ProcessWave (ProcessWave, pwFs))
-import NITTA.Model.Networks.Bus (BusNetwork (bnPUPrototypes, bnPus, bnRemains))
+import NITTA.Model.Networks.Bus (BusNetworks (bnPUPrototypes, bnPus, bnRemains))
 import NITTA.Model.Networks.Types (PU (PU, unit), PUPrototype (..))
 import NITTA.Model.Problems.Allocation (
     Allocation (Allocation, processUnitTag),
@@ -57,8 +57,8 @@ instance ToJSON AllocationMetrics
 instance
     UnitTag tag =>
     SynthesisDecisionCls
-        (SynthesisState (TargetSystem (BusNetwork tag v x t) tag v x t) tag v x t)
-        (TargetSystem (BusNetwork tag v x t) tag v x t)
+        (SynthesisState (TargetSystem (BusNetworks tag v x t) tag v x t) tag v x t)
+        (TargetSystem (BusNetworks tag v x t) tag v x t)
         (Allocation tag)
         (Allocation tag)
         AllocationMetrics

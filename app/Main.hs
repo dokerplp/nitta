@@ -242,7 +242,7 @@ main = do
                 received = [("u#0", map (\i -> read $ show $ sin ((2 :: Double) * 3.14 * 50 * 0.001 * i)) [0 .. toEnum n])]
                 ioSync_ = fromJust $ io_sync <|> ioSync <$> conf <|> Just Sync
                 confMa = mkMicroarchitecture <$> conf
-                ma :: BusNetwork T.Text T.Text (Attr (FX m b)) Int
+                ma :: BusNetworks T.Text T.Text (Attr (FX m b)) Int
                 ma
                     | auto_march && isJust confMa =
                         error $

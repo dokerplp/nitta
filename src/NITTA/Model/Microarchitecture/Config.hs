@@ -35,7 +35,7 @@ import GHC.Generics (Generic)
 import NITTA.Intermediate.Value (Val)
 import NITTA.Intermediate.Variable (Var)
 import NITTA.Model.Networks.Bus (
-    BusNetwork,
+    BusNetworks,
     addCustom,
     addCustomPrototype,
     busNetwork,
@@ -109,7 +109,7 @@ saveConfig path conf = do
     createDirectoryIfMissing True path
     encodeFile (path <> "/microarch.yml") conf
 
-mkMicroarchitecture :: (Val v, Var x, ToJSON x) => MicroarchitectureConf -> BusNetwork T.Text x v Int
+mkMicroarchitecture :: (Val v, Var x, ToJSON x) => MicroarchitectureConf -> BusNetworks T.Text x v Int
 mkMicroarchitecture MicroarchitectureConf{mock, ioSync, library, networks} =
     let addPU proto
             | proto = addCustomPrototype

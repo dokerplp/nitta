@@ -50,8 +50,8 @@ data UnitDesc tag = UnitDesc
 
 instance ToJSON tag => ToJSON (UnitDesc tag)
 
-microarchitectureDesc :: forall tag v x t. Typeable x => BusNetwork tag v x t -> MicroarchitectureDesc tag
-microarchitectureDesc BusNetwork{bnName, bnPus, ioSync} =
+microarchitectureDesc :: forall tag v x t. Typeable x => BusNetworks tag v x t -> MicroarchitectureDesc tag
+microarchitectureDesc BusNetworks{bnName, bnPus, ioSync} =
     MicroarchitectureDesc
         { networks =
             [ NetworkDesc
