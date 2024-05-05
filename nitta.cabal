@@ -201,6 +201,7 @@ executable nitta
   ghc-options: -j -Wall -Werror -Wcompat -Wredundant-constraints -fno-warn-missing-signatures -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N -main-is Main
   build-depends:
       MissingH
+    , aeson
     , base
     , boxes
     , bytestring

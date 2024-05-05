@@ -116,6 +116,7 @@ executables:
       - "-rtsopts"
       - "-with-rtsopts=-N"
     dependencies:
+      - aeson
       - cmdargs
       - hslogger
       - nitta

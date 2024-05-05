@@ -85,7 +85,7 @@ busNetworks nets iosync =
 busNetworks' :: Default t => tag -> IOSynchronization -> BusNetworks tag v x t
 busNetworks' name iosync =
     BusNetworks
-        { bns = [busNetwork name iosync]
+        { bns = [busNetwork name]
         , ioSync = iosync
         , bnsEnv = def
         }
@@ -148,7 +148,87 @@ instance UnitTag tag => AllocationProblem (BusNetworks tag v x t) tag where
     
 instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks tag v x t) where
     moduleName _tag BusNetworks{bns} = moduleName _tag (head bns)
-    hardware tag BusNetworks{bns} = hardware tag (head bns)
+    hardware tag BusNetworks{bns, ioSync} = bnHardware (head bns) where 
+      bnHardware pu@BusNetwork{..} =
+          let (instances, valuesRegs) = renderInstance [] [] $ M.assocs bnPus
+              mn = moduleName tag pu
+              iml =
+                  [__i|
+                      module #{ mn } \#
+                              ( parameter DATA_WIDTH = #{ dataWidth (def :: x) }
+                              , parameter ATTR_WIDTH = #{ attrWidth (def :: x) }
+                              )
+                          ( input                     clk
+                          , input                     rst
+                          , input                     is_drop_allow
+                          , output                    flag_cycle_begin
+                          , output                    flag_in_cycle
+                          , output                    flag_cycle_end
+                          #{ nest 4 $ vsep $ map pretty $ externalPortsDecl $ bnExternalPorts bnPus }
+                          , output              [7:0] debug_status
+                          , output              [7:0] debug_bus1
+                          , output              [7:0] debug_bus2
+                          );
+  
+                      parameter MICROCODE_WIDTH = #{ bnSignalBusWidth };
+  
+                      wire start, stop;
+  
+                      wire [MICROCODE_WIDTH-1:0] control_bus;
+                      wire [DATA_WIDTH-1:0] data_bus;
+                      wire [ATTR_WIDTH-1:0] attr_bus;
+  
+                      // Debug
+                      assign debug_status = { flag_cycle_begin, flag_in_cycle, flag_cycle_end, data_bus[4:0] };
+                      assign debug_bus1 = data_bus[7:0];
+                      assign debug_bus2 = data_bus[31:24] | data_bus[23:16] | data_bus[15:8] | data_bus[7:0];
+  
+  
+                      // Sub module instances
+  
+                      pu_simple_control \#
+                              ( .MICROCODE_WIDTH( MICROCODE_WIDTH )
+                              , .PROGRAM_DUMP( "{{ impl.paths.nest }}/#{ mn }.dump" )
+                              , .MEMORY_SIZE( #{ length $ programTicks pu } ) // 0 - address for nop microcode
+                              ) control_unit
+                          ( .clk( clk )
+                          , .rst( rst )
+  
+                          , .signal_cycle_start( #{ isDrowAllowSignal ioSync } || stop )
+  
+                          , .signals_out( control_bus )
+  
+                          , .flag_cycle_begin( flag_cycle_begin )
+                          , .flag_in_cycle( flag_in_cycle )
+                          , .flag_cycle_end( flag_cycle_end )
+                          );
+  
+                      #{ vsep $ punctuate "\n\n" instances }
+  
+                      assign data_bus = #{ T.intercalate " | " $ map snd valuesRegs };
+                      assign attr_bus = #{ T.intercalate " | " $ map fst valuesRegs };
+  
+                      endmodule
+                      |]
+           in Aggregate (Just $ toString mn) $
+                  [ Immediate (toString $ mn <> ".v") iml
+                  , FromLibrary "pu_simple_control.v"
+                  ]
+                      <> map (uncurry hardware . first toText) (M.assocs bnPus)
+          where
+              regInstance t =
+                  [__i|
+                      wire [DATA_WIDTH-1:0] #{ t }_data_out;
+                      wire [ATTR_WIDTH-1:0] #{ t }_attr_out;
+                  |]
+  
+              renderInstance insts regs [] = (reverse insts, reverse regs)
+              renderInstance insts regs ((t, PU{unit, uEnv}) : xs) =
+                  let inst = hardwareInstance (toText t) unit uEnv
+                      insts' = inst : regInstance (toText t) : insts
+                      regs' = (toText t <> "_attr_out", toText t <> "_data_out") : regs
+                   in renderInstance insts' regs' xs
+                           
     software tag BusNetworks{bns} = software tag (head bns)
     hardwareInstance tag BusNetworks{bns} _ = 
       let
@@ -156,10 +236,186 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks t
       in hardwareInstance tag net $ bnEnv net
 
 instance (UnitTag tag, VarValTime v x t) => Testable (BusNetworks tag v x t) v x where
-    testBenchImplementation proj@Project{pUnit = BusNetworks{bns}} = 
+    testBenchImplementation proj@Project{pUnit = BusNetworks{bns, ioSync}} = 
       let
         net = head bns
-      in testBenchImplementation proj {pUnit = net, pUnitEnv = bnEnv net}
+      in bnTestBenchImplementation proj {pUnit = net, pUnitEnv = bnEnv net} where
+        bnTestBenchImplementation
+                Project
+                    { pName
+                    , pUnit = bn@BusNetwork{bnPus, bnName}
+                    , pTestCntx = pTestCntx@Cntx{cntxProcess, cntxCycleNumber}
+                    } =
+                    let testEnv =
+                            vsep
+                                $ mapMaybe
+                                    ( \(tag, PU{unit, uEnv}) ->
+                                        let tEnv =
+                                                TestEnvironment
+                                                    { teCntx = pTestCntx
+                                                    , teComputationDuration = fromEnum $ nextTick bn
+                                                    }
+                                         in testEnvironment (toText tag) unit uEnv tEnv
+                                    )
+                                $ M.assocs bnPus
+        
+                        externalPortNames = map pretty $ concatMap ((\(is, os, ios) -> is <> os <> ios) . snd) $ bnExternalPorts bnPus
+                        externalIO = vsep $ punctuate ", " ("" : map (\p -> [i|.#{ p }( #{ p } )|]) externalPortNames)
+        
+                        envInitFlags = map pretty $ mapMaybe (uncurry testEnvironmentInitFlag . first toText) $ M.assocs bnPus
+        
+                        tickWithTransfers =
+                            map
+                                ( \(cycleI, cycleCntx) ->
+                                    map
+                                        (\t -> (cycleI, t, cntxToTransfer cycleCntx t))
+                                        [0 .. nextTick bn]
+                                )
+                                $ zip [0 :: Int ..]
+                                $ take cntxCycleNumber cntxProcess
+        
+                        assertions = vsep $ map (\cycleTickTransfer -> posedgeCycle <> line <> vsep (map assertion cycleTickTransfer)) tickWithTransfers
+        
+                        assertion (cycleI, t, Nothing) =
+                            [i|@(posedge clk); traceWithAttr(#{ cycleI }, #{ t }, #{ toString bnName }.data_bus, #{ toString bnName }.attr_bus);|]
+                        assertion (cycleI, t, Just (v, x)) =
+                            [i|@(posedge clk); assertWithAttr(#{ cycleI }, #{ t }, #{ toString bnName }.data_bus, #{ toString bnName }.attr_bus, #{ dataLiteral x }, #{ attrLiteral x }, "#{ toString v }");|]
+        
+                        tbName = moduleName pName bn <> "_tb"
+                     in Aggregate
+                            Nothing
+                            [ Immediate (toString $ tbName <> ".v") $
+                                doc2text
+                                    [__i|
+                                `timescale 1 ps / 1 ps
+                                module #{ tbName }();
+        
+                                /*
+                                Functions:
+                                #{ indent 4 $ vsep $ map viaShow $ functions bn }
+                                */
+        
+                                /*
+                                Steps:
+                                #{ indent 4 $ vsep $ map viaShow $ reverse $ steps $ process bn }
+                                */
+        
+                                // system signals
+                                reg clk, rst;
+                                wire cycle;
+        
+                                // clk and rst generator
+                                #{ snippetClkGen }
+        
+                                // vcd dump
+                                #{ snippetDumpFile $ moduleName pName bn }
+        
+        
+                                ////////////////////////////////////////////////////////////
+                                // test environment
+        
+                                // external ports (IO)
+                                #{ if null externalPortNames then "" else "wire " <> hsep (punctuate ", " externalPortNames) <> ";" }
+        
+                                // initialization flags
+                                #{ if null envInitFlags then "" else "reg " <> hsep (punctuate ", " envInitFlags) <> ";" }
+                                assign env_init_flag = #{ hsep $ defEnvInitFlag envInitFlags ioSync };
+        
+                                #{ testEnv }
+        
+        
+                                ////////////////////////////////////////////////////////////
+                                // unit under test
+        
+                                #{ moduleName pName bn } \#
+                                        ( .DATA_WIDTH( #{ dataWidth (def :: x) } )
+                                        , .ATTR_WIDTH( #{ attrWidth (def :: x) } )
+                                        ) #{ toString bnName }
+                                    ( .clk( clk )
+                                    , .rst( rst )
+                                    , .flag_cycle_begin( cycle )
+                                    #{ nest 4 externalIO }
+                                    // if 1 - The process cycle are indipendent from a SPI.
+                                    // else - The process cycle are wait for the SPI.
+                                    , .is_drop_allow( #{ isDrowAllowSignal ioSync } )
+                                    );
+        
+                                // internal unit under test checks
+                                initial
+                                    begin
+                                        // microcode when rst == 1 -> program[0], and must be nop for all PUs
+                                        @(negedge rst); // Turn mUnit on.
+                                        // Start computational cycle from program[1] to program[n] and repeat.
+                                        // Signals effect to mUnit state after first clk posedge.
+                                        @(posedge clk);
+                                        while (!env_init_flag) @(posedge clk);
+                                        #{ nest 8 assertions }
+                                        repeat ( #{ 2 * nextTick bn } ) @(posedge clk);
+                                        $finish;
+                                    end
+        
+                                // TIMEOUT
+                                initial
+                                    begin
+                                        repeat (100000) @(posedge clk);
+                                        $display("FAIL too long simulation process");
+                                        $finish;
+                                    end
+        
+                                ////////////////////////////////////////////////////////////
+                                // Utils
+                                #{ verilogHelper (def :: x) }
+        
+                                endmodule
+                                |]
+                            , Immediate (toString $ tbName <> ".gtkw") $
+                                T.pack
+                                    [__i|
+                                        [*]
+                                        [*] GTKWave Analyzer v3.3.107 (w)1999-2020 BSI
+                                        [*] Fri Mar 12 11:37:55 2021
+                                        [*]
+                                        [dumpfile] "{{ nitta.paths.abs_nitta }}/#{ tbName }.vcd"
+                                        [timestart] 0
+                                        *-6.864726 0 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+                                        [treeopen] #{ tbName }.
+                                        [treeopen] #{ tbName }.#{ toString bnName }.
+                                        [sst_width] 193
+                                        [signals_width] 203
+                                        [sst_expanded] 1
+                                        [sst_vpaned_height] 167
+                                        @28
+                                        #{ tbName }.clk
+                                        #{ tbName }.rst
+                                        #{ tbName }.cycle
+                                        @24
+                                        #{ tbName }.#{ toString bnName }.control_unit.pc[5:0]
+                                        @28
+                                        #{ tbName }.#{ toString bnName }.control_unit.flag_cycle_begin
+                                        #{ tbName }.#{ toString bnName }.control_unit.flag_cycle_end
+                                        @25
+                                        #{ tbName }.#{ toString bnName }.data_bus[31:0]
+                                        @22
+                                        #{ tbName }.#{ toString bnName }.attr_bus[3:0]
+                                        [pattern_trace] 1
+                                        [pattern_trace] 0
+                                        |]
+                            ]
+                    where
+                        defEnvInitFlag flags Sync = punctuate " && " $ "1'b1" : flags
+                        defEnvInitFlag flags ASync = punctuate " || " $ "1'b1" : flags
+                        defEnvInitFlag _flags OnBoard = error "can't generate testbench without specific IOSynchronization"
+        
+                        cntxToTransfer cycleCntx t =
+                            case extractInstructionAt bn t of
+                                Transport v _ _ : _ -> Just (v, getCntx cycleCntx v)
+                                _ -> Nothing
+        
+                        posedgeCycle =
+                            [__i|
+                                //-----------------------------------------------------------------
+                                @(posedge cycle);
+                            |]
 
 data BusNetwork tag v x t = BusNetwork
     { bnName :: tag
@@ -173,13 +429,12 @@ data BusNetwork tag v x t = BusNetwork
     -- ^ Map of process units.
     , bnSignalBusWidth :: Int
     -- ^ Controll bus width.
-    , bnIoSync :: IOSynchronization
     , bnEnv :: UnitEnv (BusNetwork tag v x t)
     , bnPUPrototypes :: M.Map tag (PUPrototype tag v x t)
     -- ^ Set of the PUs that could be added to the network during synthesis process
     }
 
-busNetwork name iosync =
+busNetwork name =
     BusNetwork
         { bnName = name
         , bnRemains = []
@@ -187,13 +442,12 @@ busNetwork name iosync =
         , bnProcess = def
         , bnPus = def
         , bnSignalBusWidth = 0
-        , bnIoSync = iosync
         , bnEnv = def
         , bnPUPrototypes = def
         }
 
 instance (Default t, IsString tag) => Default (BusNetwork tag v x t) where
-    def = busNetwork "defaultBus" ASync
+    def = busNetwork "defaultBus"
 
 instance Var v => Variables (BusNetwork tag v x t) v where
     variables BusNetwork{bnBound} = unionsMap variables $ concat $ M.elems bnBound
@@ -675,86 +929,8 @@ externalPortsDecl ports =
 
 instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetwork tag v x t) where
     moduleName _tag BusNetwork{bnName} = toText bnName
-
-    hardware tag pu@BusNetwork{..} =
-        let (instances, valuesRegs) = renderInstance [] [] $ M.assocs bnPus
-            mn = moduleName tag pu
-            iml =
-                [__i|
-                    module #{ mn } \#
-                            ( parameter DATA_WIDTH = #{ dataWidth (def :: x) }
-                            , parameter ATTR_WIDTH = #{ attrWidth (def :: x) }
-                            )
-                        ( input                     clk
-                        , input                     rst
-                        , input                     is_drop_allow
-                        , output                    flag_cycle_begin
-                        , output                    flag_in_cycle
-                        , output                    flag_cycle_end
-                        #{ nest 4 $ vsep $ map pretty $ externalPortsDecl $ bnExternalPorts bnPus }
-                        , output              [7:0] debug_status
-                        , output              [7:0] debug_bus1
-                        , output              [7:0] debug_bus2
-                        );
-
-                    parameter MICROCODE_WIDTH = #{ bnSignalBusWidth };
-
-                    wire start, stop;
-
-                    wire [MICROCODE_WIDTH-1:0] control_bus;
-                    wire [DATA_WIDTH-1:0] data_bus;
-                    wire [ATTR_WIDTH-1:0] attr_bus;
-
-                    // Debug
-                    assign debug_status = { flag_cycle_begin, flag_in_cycle, flag_cycle_end, data_bus[4:0] };
-                    assign debug_bus1 = data_bus[7:0];
-                    assign debug_bus2 = data_bus[31:24] | data_bus[23:16] | data_bus[15:8] | data_bus[7:0];
-
-
-                    // Sub module instances
-
-                    pu_simple_control \#
-                            ( .MICROCODE_WIDTH( MICROCODE_WIDTH )
-                            , .PROGRAM_DUMP( "{{ impl.paths.nest }}/#{ mn }.dump" )
-                            , .MEMORY_SIZE( #{ length $ programTicks pu } ) // 0 - address for nop microcode
-                            ) control_unit
-                        ( .clk( clk )
-                        , .rst( rst )
-
-                        , .signal_cycle_start( #{ isDrowAllowSignal bnIoSync } || stop )
-
-                        , .signals_out( control_bus )
-
-                        , .flag_cycle_begin( flag_cycle_begin )
-                        , .flag_in_cycle( flag_in_cycle )
-                        , .flag_cycle_end( flag_cycle_end )
-                        );
-
-                    #{ vsep $ punctuate "\n\n" instances }
-
-                    assign data_bus = #{ T.intercalate " | " $ map snd valuesRegs };
-                    assign attr_bus = #{ T.intercalate " | " $ map fst valuesRegs };
-
-                    endmodule
-                    |]
-         in Aggregate (Just $ toString mn) $
-                [ Immediate (toString $ mn <> ".v") iml
-                , FromLibrary "pu_simple_control.v"
-                ]
-                    <> map (uncurry hardware . first toText) (M.assocs bnPus)
-        where
-            regInstance t =
-                [__i|
-                    wire [DATA_WIDTH-1:0] #{ t }_data_out;
-                    wire [ATTR_WIDTH-1:0] #{ t }_attr_out;
-                |]
-
-            renderInstance insts regs [] = (reverse insts, reverse regs)
-            renderInstance insts regs ((t, PU{unit, uEnv}) : xs) =
-                let inst = hardwareInstance (toText t) unit uEnv
-                    insts' = inst : regInstance (toText t) : insts
-                    regs' = (toText t <> "_attr_out", toText t <> "_data_out") : regs
-                 in renderInstance insts' regs' xs
+    
+    hardware _ _ = error "todo remove"
 
     software tag pu@BusNetwork{bnProcess = Process{}, ..} =
         let subSW = map (uncurry software . first toText) $ M.assocs bnPus
@@ -810,184 +986,7 @@ instance IOConnected (BusNetwork tag v x t) where
     inputPorts = extInputs
     outputPorts = extOutputs
     inoutPorts = extInOuts
-
-instance (UnitTag tag, VarValTime v x t) => Testable (BusNetwork tag v x t) v x where
-    testBenchImplementation
-        Project
-            { pName
-            , pUnit = bn@BusNetwork{bnPus, bnIoSync, bnName}
-            , pTestCntx = pTestCntx@Cntx{cntxProcess, cntxCycleNumber}
-            } =
-            let testEnv =
-                    vsep
-                        $ mapMaybe
-                            ( \(tag, PU{unit, uEnv}) ->
-                                let tEnv =
-                                        TestEnvironment
-                                            { teCntx = pTestCntx
-                                            , teComputationDuration = fromEnum $ nextTick bn
-                                            }
-                                 in testEnvironment (toText tag) unit uEnv tEnv
-                            )
-                        $ M.assocs bnPus
-
-                externalPortNames = map pretty $ concatMap ((\(is, os, ios) -> is <> os <> ios) . snd) $ bnExternalPorts bnPus
-                externalIO = vsep $ punctuate ", " ("" : map (\p -> [i|.#{ p }( #{ p } )|]) externalPortNames)
-
-                envInitFlags = map pretty $ mapMaybe (uncurry testEnvironmentInitFlag . first toText) $ M.assocs bnPus
-
-                tickWithTransfers =
-                    map
-                        ( \(cycleI, cycleCntx) ->
-                            map
-                                (\t -> (cycleI, t, cntxToTransfer cycleCntx t))
-                                [0 .. nextTick bn]
-                        )
-                        $ zip [0 :: Int ..]
-                        $ take cntxCycleNumber cntxProcess
-
-                assertions = vsep $ map (\cycleTickTransfer -> posedgeCycle <> line <> vsep (map assertion cycleTickTransfer)) tickWithTransfers
-
-                assertion (cycleI, t, Nothing) =
-                    [i|@(posedge clk); traceWithAttr(#{ cycleI }, #{ t }, #{ toString bnName }.data_bus, #{ toString bnName }.attr_bus);|]
-                assertion (cycleI, t, Just (v, x)) =
-                    [i|@(posedge clk); assertWithAttr(#{ cycleI }, #{ t }, #{ toString bnName }.data_bus, #{ toString bnName }.attr_bus, #{ dataLiteral x }, #{ attrLiteral x }, "#{ toString v }");|]
-
-                tbName = moduleName pName bn <> "_tb"
-             in Aggregate
-                    Nothing
-                    [ Immediate (toString $ tbName <> ".v") $
-                        doc2text
-                            [__i|
-                        `timescale 1 ps / 1 ps
-                        module #{ tbName }();
-
-                        /*
-                        Functions:
-                        #{ indent 4 $ vsep $ map viaShow $ functions bn }
-                        */
-
-                        /*
-                        Steps:
-                        #{ indent 4 $ vsep $ map viaShow $ reverse $ steps $ process bn }
-                        */
-
-                        // system signals
-                        reg clk, rst;
-                        wire cycle;
-
-                        // clk and rst generator
-                        #{ snippetClkGen }
-
-                        // vcd dump
-                        #{ snippetDumpFile $ moduleName pName bn }
-
-
-                        ////////////////////////////////////////////////////////////
-                        // test environment
-
-                        // external ports (IO)
-                        #{ if null externalPortNames then "" else "wire " <> hsep (punctuate ", " externalPortNames) <> ";" }
-
-                        // initialization flags
-                        #{ if null envInitFlags then "" else "reg " <> hsep (punctuate ", " envInitFlags) <> ";" }
-                        assign env_init_flag = #{ hsep $ defEnvInitFlag envInitFlags bnIoSync };
-
-                        #{ testEnv }
-
-
-                        ////////////////////////////////////////////////////////////
-                        // unit under test
-
-                        #{ moduleName pName bn } \#
-                                ( .DATA_WIDTH( #{ dataWidth (def :: x) } )
-                                , .ATTR_WIDTH( #{ attrWidth (def :: x) } )
-                                ) #{ toString bnName }
-                            ( .clk( clk )
-                            , .rst( rst )
-                            , .flag_cycle_begin( cycle )
-                            #{ nest 4 externalIO }
-                            // if 1 - The process cycle are indipendent from a SPI.
-                            // else - The process cycle are wait for the SPI.
-                            , .is_drop_allow( #{ isDrowAllowSignal bnIoSync } )
-                            );
-
-                        // internal unit under test checks
-                        initial
-                            begin
-                                // microcode when rst == 1 -> program[0], and must be nop for all PUs
-                                @(negedge rst); // Turn mUnit on.
-                                // Start computational cycle from program[1] to program[n] and repeat.
-                                // Signals effect to mUnit state after first clk posedge.
-                                @(posedge clk);
-                                while (!env_init_flag) @(posedge clk);
-                                #{ nest 8 assertions }
-                                repeat ( #{ 2 * nextTick bn } ) @(posedge clk);
-                                $finish;
-                            end
-
-                        // TIMEOUT
-                        initial
-                            begin
-                                repeat (100000) @(posedge clk);
-                                $display("FAIL too long simulation process");
-                                $finish;
-                            end
-
-                        ////////////////////////////////////////////////////////////
-                        // Utils
-                        #{ verilogHelper (def :: x) }
-
-                        endmodule
-                        |]
-                    , Immediate (toString $ tbName <> ".gtkw") $
-                        T.pack
-                            [__i|
-                                [*]
-                                [*] GTKWave Analyzer v3.3.107 (w)1999-2020 BSI
-                                [*] Fri Mar 12 11:37:55 2021
-                                [*]
-                                [dumpfile] "{{ nitta.paths.abs_nitta }}/#{ tbName }.vcd"
-                                [timestart] 0
-                                *-6.864726 0 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
-                                [treeopen] #{ tbName }.
-                                [treeopen] #{ tbName }.#{ toString bnName }.
-                                [sst_width] 193
-                                [signals_width] 203
-                                [sst_expanded] 1
-                                [sst_vpaned_height] 167
-                                @28
-                                #{ tbName }.clk
-                                #{ tbName }.rst
-                                #{ tbName }.cycle
-                                @24
-                                #{ tbName }.#{ toString bnName }.control_unit.pc[5:0]
-                                @28
-                                #{ tbName }.#{ toString bnName }.control_unit.flag_cycle_begin
-                                #{ tbName }.#{ toString bnName }.control_unit.flag_cycle_end
-                                @25
-                                #{ tbName }.#{ toString bnName }.data_bus[31:0]
-                                @22
-                                #{ tbName }.#{ toString bnName }.attr_bus[3:0]
-                                [pattern_trace] 1
-                                [pattern_trace] 0
-                                |]
-                    ]
-            where
-                defEnvInitFlag flags Sync = punctuate " && " $ "1'b1" : flags
-                defEnvInitFlag flags ASync = punctuate " || " $ "1'b1" : flags
-                defEnvInitFlag _flags OnBoard = error "can't generate testbench without specific IOSynchronization"
-
-                cntxToTransfer cycleCntx t =
-                    case extractInstructionAt bn t of
-                        Transport v _ _ : _ -> Just (v, getCntx cycleCntx v)
-                        _ -> Nothing
-
-                posedgeCycle =
-                    [__i|
-                        //-----------------------------------------------------------------
-                        @(posedge cycle);
-                    |]
+    
 
 isDrowAllowSignal Sync = bool2verilog False
 isDrowAllowSignal ASync = bool2verilog True
@@ -1025,8 +1024,8 @@ modifyNetwork net@BusNetwork{bnPus, bnPUPrototypes, bnSignalBusWidth, bnEnv} bui
             , bnPUPrototypes = prototypes
             }
 
-defineNetwork :: Default t => k -> IOSynchronization -> State (BuilderSt k v x t) a -> BusNetwork k v x t
-defineNetwork bnName ioSync builder = modifyNetwork (busNetwork bnName ioSync) builder
+defineNetwork :: Default t => k -> State (BuilderSt k v x t) a -> BusNetwork k v x t
+defineNetwork bnName builder = modifyNetwork (busNetwork bnName) builder
 
 addCustom ::
     forall tag v x t m pu.
