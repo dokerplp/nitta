@@ -107,28 +107,6 @@ instance (UnitTag tag, VarValTime v x t) => ProcessorUnit (BusNetworks tag v x t
     parallelismType BusNetworks{networks} = parallelismType (head networks)
     puSize BusNetworks{networks} = puSize (head networks)
 
---instance Controllable (BusNetworks tag v x t) where
---    data Instruction (BusNetworks tag v x t)
---        = Transport v tag tag
---        deriving (Typeable)
---
---    data Microcode (BusNetwork tag v x t)
---        = BusNetworkMC (M.Map SignalTag SignalValue)
---
---    -- Right now, BusNetwork don't have external control (exclude rst signal and some hacks). All
---    -- signals starts and ends inside network unit.
---    zipSignalTagsAndValues BusNetworkPorts BusNetworkMC{} = []
---
---    usedPortTags _ = error "internal error"
---
---    takePortTags _ _ = error "internal error"
---
---instance (ToString tag, Var v) => Show (Instruction (BusNetworks tag v x t)) where
---    show (Transport v src trg) = "Transport " <> toString v <> " " <> toString src <> " " <> toString trg
-
---instance {-# OVERLAPS #-} ByTime (BusNetworks tag v x t) t where
---    microcodeAt _ = error ""
-
 instance (UnitTag tag, VarValTime v x t) => BindProblem (BusNetworks tag v x t) tag v x where
     bindOptions BusNetworks{networks} = bindOptions (head networks)
     bindDecision nets@BusNetworks{networks} x = nets { networks = [bindDecision (head networks) x] }
@@ -157,24 +135,10 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks t
     moduleName _tag BusNetworks{networks} = moduleName _tag (head networks)
     hardware tag BusNetworks{networks} = hardware tag (head networks)
     software tag BusNetworks{networks} = software tag (head networks)
---    hardwareInstance tag BusNetworks{networks} = hardwareInstance tag (head networks)
-    hardwareInstance _title _bn _env =
-        error "BusNetwork should be NetworkEnv"
-
-instance Connected (BusNetworks tag v x t) where
-    data Ports (BusNetworks tag v x t) = BusNetworksPorts
-        deriving (Show)
-
-instance IOConnected (BusNetworks tag v x t) where
-    data IOPorts (BusNetworks tag v x t) = BusNetworksIO
-        { extInputs_ :: S.Set InputPortTag
-        , extOutputs_ :: S.Set OutputPortTag
-        , extInOuts_ :: S.Set InoutPortTag
-        }
-        deriving (Show)
-    inputPorts = extInputs_
-    outputPorts = extOutputs_
-    inoutPorts = extInOuts_
+    hardwareInstance tag BusNetworks{networks} _ = 
+      let
+        net = head networks
+      in hardwareInstance tag net $ bnEnv net
 
 instance (UnitTag tag, VarValTime v x t) => Testable (BusNetworks tag v x t) v x where
     testBenchImplementation proj@Project{pUnit = BusNetworks{networks}} = 
