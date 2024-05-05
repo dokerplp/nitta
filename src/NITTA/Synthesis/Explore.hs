@@ -245,23 +245,15 @@ nodeCtx parent nModel =
                     ]
             , unitWorkloadInFunction =
                 let
-                    BusNetworks{bnBound, bnPus} = mUnit nModel
+                    BusNetworks{networks} = mUnit nModel
                  in
-                    M.fromList
-                        $ map
-                            ( \uTag -> (uTag, maybe 0 length $ bnBound M.!? uTag)
-                            )
-                        $ M.keys bnPus
+                    foldl1 M.union (map workloadInFunctionOneNetwork networks)
             }
 
---let
---    BusNetworks{networks} = mUnit nModel
--- in
---    foldl1 M.union (map workloadInFunctionOneNetwork networks)
---
---workloadInFunctionOneNetwork net =
---  M.fromList
---    $ map
---        ( \uTag -> (uTag, maybe 0 length $ (bnBound net) M.!? uTag)
---        )
---    $ M.keys (bnPus net)
+workloadInFunctionOneNetwork :: Ord k => BusNetwork k v x t -> M.Map k Int
+workloadInFunctionOneNetwork net =
+  M.fromList
+    $ map
+        ( \uTag -> (uTag, maybe 0 length $ (bnBound net) M.!? uTag)
+        )
+    $ M.keys (bnPus net)

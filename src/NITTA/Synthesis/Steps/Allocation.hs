@@ -20,7 +20,10 @@ import Data.Aeson (ToJSON)
 import Data.Map qualified as M
 import GHC.Generics (Generic)
 import NITTA.Intermediate.Analysis (ProcessWave (ProcessWave, pwFs))
-import NITTA.Model.Networks.Bus (BusNetworks (bnPUPrototypes, bnPus, bnRemains))
+import NITTA.Model.Networks.Bus (
+    BusNetworks (..),
+    BusNetwork (bnPUPrototypes, bnPus, bnRemains),
+ )
 import NITTA.Model.Networks.Types (PU (PU, unit), PUPrototype (..))
 import NITTA.Model.Problems.Allocation (
     Allocation (Allocation, processUnitTag),
@@ -65,13 +68,14 @@ instance
     where
     decisions SynthesisState{sTarget} o = [(o, allocationDecision sTarget o)]
 
-    parameters SynthesisState{sTarget = TargetSystem{mUnit}, processWaves, numberOfProcessWaves} Allocation{processUnitTag} _ =
-        let pus = M.elems $ bnPus mUnit
-            tmp = bnPUPrototypes mUnit M.! processUnitTag
+    parameters SynthesisState{sTarget = TargetSystem{mUnit = BusNetworks{networks}}, processWaves, numberOfProcessWaves} Allocation{processUnitTag} _ =
+        let net = head networks
+            pus = M.elems $ bnPus net
+            tmp = bnPUPrototypes net M.! processUnitTag
             mParallelism PUPrototype{pProto} = parallelismType pProto
             canProcessTmp PUPrototype{pProto} f = allowToProcess f pProto
             canProcessPU PU{unit} f = allowToProcess f unit
-            relatedRemains = filter (canProcessTmp tmp) $ bnRemains mUnit
+            relatedRemains = filter (canProcessTmp tmp) $ bnRemains net
             fCountByWaves = map (\ProcessWave{pwFs} -> length $ filter (canProcessTmp tmp) pwFs) processWaves
          in AllocationMetrics
                 { mParallelism = mParallelism tmp

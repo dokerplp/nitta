@@ -229,7 +229,7 @@ synthesizeTargetSystem
                             , pInProjectNittaPath
                             , pAbsNittaPath = pwd </> tPath </> tName </> pInProjectNittaPath
                             , pUnit = targetUnit leaf
-                            , pUnitEnv = bnEnv $ targetUnit leaf
+                            , pUnitEnv = bnsEnv $ targetUnit leaf
                             , -- because application algorithm can be refactored we need to use
                               -- synthesised version
                               pTestCntx = simulateDataFlowGraph tSimulationCycleN def tReceivedValues $ targetDFG leaf

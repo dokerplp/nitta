@@ -35,12 +35,12 @@ import GHC.Generics (Generic)
 import NITTA.Intermediate.Value (Val)
 import NITTA.Intermediate.Variable (Var)
 import NITTA.Model.Networks.Bus (
-    BusNetworks,
+    BusNetworks (..),
     addCustom,
     addCustomPrototype,
     busNetwork,
     modifyNetwork,
- )
+ ) 
 import NITTA.Model.Networks.Types (IOSynchronization)
 import NITTA.Model.ProcessorUnits qualified as PU
 import System.Directory (createDirectoryIfMissing)
@@ -93,7 +93,7 @@ data MicroarchitectureConf = MicroarchitectureConf
     , ioSync :: IOSynchronization
     , valueType :: T.Text
     , library :: Maybe (Map T.Text PUConf)
-    , networks :: Map T.Text NetworkConf
+    , nets :: Map T.Text NetworkConf
     }
     deriving (Generic, Show)
 
@@ -110,7 +110,7 @@ saveConfig path conf = do
     encodeFile (path <> "/microarch.yml") conf
 
 mkMicroarchitecture :: (Val v, Var x, ToJSON x) => MicroarchitectureConf -> BusNetworks T.Text x v Int
-mkMicroarchitecture MicroarchitectureConf{mock, ioSync, library, networks} =
+mkMicroarchitecture MicroarchitectureConf{mock, ioSync, library, nets} =
     let addPU proto
             | proto = addCustomPrototype
             | otherwise = addCustom
@@ -143,6 +143,17 @@ mkMicroarchitecture MicroarchitectureConf{mock, ioSync, library, networks} =
                                     , master_cs = PU.OutputPortTag cs
                                     }
         mkNetwork name net = modifyNetwork (busNetwork name ioSync) (build net)
-     in case M.toList networks of
-            [(name, net)] -> mkNetwork name net
+     in case M.toList nets of
+            [(name, net)] -> BusNetworks
+                                  { networks = [mkNetwork name net]
+                                  , bnsEnv = def
+                                  }
             _ -> error "multi-networks are not currently supported"
+            
+-- mkNetworks nets_ = BusNetworks
+--                               { networks = mkNetworks' [] nets_
+--                               }
+--
+--        mkNetworks' acc [] = acc
+--        mkNetworks' acc [(name, net) : nets_] = mkNetworks (acc + mkNetwork name net) nets_
+--     in mk

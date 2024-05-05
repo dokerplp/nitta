@@ -26,7 +26,7 @@ import NITTA.Model.Networks.Types
 import NITTA.Utils.Base
 
 data MicroarchitectureDesc tag = MicroarchitectureDesc
-    { networks :: [NetworkDesc tag]
+    { nets :: [NetworkDesc tag]
     , ioSyncMode :: IOSynchronization
     }
     deriving (Generic)
@@ -51,9 +51,12 @@ data UnitDesc tag = UnitDesc
 instance ToJSON tag => ToJSON (UnitDesc tag)
 
 microarchitectureDesc :: forall tag v x t. Typeable x => BusNetworks tag v x t -> MicroarchitectureDesc tag
-microarchitectureDesc BusNetworks{bnName, bnPus, ioSync} =
+microarchitectureDesc BusNetworks{networks} = 
+  let
+    BusNetwork{bnName, bnPus, ioSync} = head networks
+  in
     MicroarchitectureDesc
-        { networks =
+        { nets =
             [ NetworkDesc
                 { networkTag = bnName
                 , valueType = showText $ typeRep (Proxy :: Proxy x)
