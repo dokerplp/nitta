@@ -284,7 +284,7 @@ debug ctx@BackendCtx{root} sid = liftIO $ do
             , dbgPULocks = map (second locks) $ M.assocs $ bnPus' $ targetUnit tree
             }
     where
-        endpointOptions' BusNetworks{networks} = map (uncurry UnitEndpoints . second endpointOptions) $ M.assocs $ bnPus $ head networks
+        endpointOptions' BusNetworks{bns} = map (uncurry UnitEndpoints . second endpointOptions) $ M.assocs $ bnPus $ head bns
 
 -- API Description
 

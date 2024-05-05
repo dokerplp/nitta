@@ -68,8 +68,8 @@ instance
     where
     decisions SynthesisState{sTarget} o = [(o, allocationDecision sTarget o)]
 
-    parameters SynthesisState{sTarget = TargetSystem{mUnit = BusNetworks{networks}}, processWaves, numberOfProcessWaves} Allocation{processUnitTag} _ =
-        let net = head networks
+    parameters SynthesisState{sTarget = TargetSystem{mUnit = BusNetworks{bns}}, processWaves, numberOfProcessWaves} Allocation{processUnitTag} _ =
+        let net = head bns
             pus = M.elems $ bnPus net
             tmp = bnPUPrototypes net M.! processUnitTag
             mParallelism PUPrototype{pProto} = parallelismType pProto

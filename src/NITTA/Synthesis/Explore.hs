@@ -245,9 +245,9 @@ nodeCtx parent nModel =
                     ]
             , unitWorkloadInFunction =
                 let
-                    BusNetworks{networks} = mUnit nModel
+                    BusNetworks{bns} = mUnit nModel
                  in
-                    foldl1 M.union (map workloadInFunctionOneNetwork networks)
+                    foldl1 M.union (map workloadInFunctionOneNetwork bns)
             }
 
 workloadInFunctionOneNetwork :: Ord k => BusNetwork k v x t -> M.Map k Int

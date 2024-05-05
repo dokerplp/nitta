@@ -66,18 +66,18 @@ import Prettyprinter
 import Text.Regex
 
 data BusNetworks tag v x t = BusNetworks
-    { networks :: [BusNetwork tag v x t]
+    { bns :: [BusNetwork tag v x t]
     , ioSync :: IOSynchronization
     , bnsEnv :: UnitEnv (BusNetworks tag v x t)
     }
     
-bnPus' = bnPus . head . networks
+bnPus' = bnPus . head . bns
     
         
 busNetworks :: [BusNetwork tag v x t] -> IOSynchronization -> BusNetworks tag v x t
 busNetworks nets iosync =
     BusNetworks
-        { networks = nets
+        { bns = nets
         , ioSync = iosync
         , bnsEnv = def
         }
@@ -85,7 +85,7 @@ busNetworks nets iosync =
 busNetworks' :: Default t => tag -> IOSynchronization -> BusNetworks tag v x t
 busNetworks' name iosync =
     BusNetworks
-        { networks = [busNetwork name iosync]
+        { bns = [busNetwork name iosync]
         , ioSync = iosync
         , bnsEnv = def
         }
@@ -93,7 +93,7 @@ busNetworks' name iosync =
 busNetworks'' :: BusNetwork tag v x t -> IOSynchronization -> BusNetworks tag v x t
 busNetworks'' net iosync = 
     BusNetworks
-        { networks = [net]
+        { bns = [net]
         , ioSync = iosync
         , bnsEnv = def
         }
@@ -103,62 +103,62 @@ instance (Default t, IsString tag) => Default (BusNetworks tag v x t) where
     def = busNetworks' "defaultBus" ASync
 
 instance Var v => Variables (BusNetworks tag v x t) v where
-    variables BusNetworks{networks} = variables (head networks)
+    variables BusNetworks{bns} = variables (head bns)
 
 instance Default x => DefaultX (BusNetworks tag v x t) x
 
 instance WithFunctions (BusNetworks tag v x t) (F v x) where
-    functions BusNetworks{networks} = functions (head networks)
+    functions BusNetworks{bns} = functions (head bns)
 
 instance (UnitTag tag, VarValTime v x t) => DataflowProblem (BusNetworks tag v x t) tag v t where
-    dataflowOptions BusNetworks{networks} = dataflowOptions (head networks)
-    dataflowDecision nets@BusNetworks{networks} x = nets { networks = [dataflowDecision (head networks) x] }
+    dataflowOptions BusNetworks{bns} = dataflowOptions (head bns)
+    dataflowDecision nets@BusNetworks{bns} x = nets { bns = [dataflowDecision (head bns) x] }
 
 instance (UnitTag tag, VarValTime v x t) => ProcessorUnit (BusNetworks tag v x t) v x t where
-    tryBind f nets@BusNetworks{networks} = case tryBind f (head networks) of
+    tryBind f nets@BusNetworks{bns} = case tryBind f (head bns) of
       Left err -> Left err
-      Right net -> Right nets { networks = [net] }
-    process BusNetworks{networks} = process (head networks)
-    parallelismType BusNetworks{networks} = parallelismType (head networks)
-    puSize BusNetworks{networks} = puSize (head networks)
+      Right net -> Right nets { bns = [net] }
+    process BusNetworks{bns} = process (head bns)
+    parallelismType BusNetworks{bns} = parallelismType (head bns)
+    puSize BusNetworks{bns} = puSize (head bns)
 
 instance (UnitTag tag, VarValTime v x t) => BindProblem (BusNetworks tag v x t) tag v x where
-    bindOptions BusNetworks{networks} = bindOptions (head networks)
-    bindDecision nets@BusNetworks{networks} x = nets { networks = [bindDecision (head networks) x] }
+    bindOptions BusNetworks{bns} = bindOptions (head bns)
+    bindDecision nets@BusNetworks{bns} x = nets { bns = [bindDecision (head bns) x] }
 
 instance (UnitTag tag, VarValTime v x t) => BreakLoopProblem (BusNetworks tag v x t) v x where
-    breakLoopOptions BusNetworks{networks} = breakLoopOptions (head networks)
-    breakLoopDecision nets@BusNetworks{networks} x = nets { networks = [breakLoopDecision (head networks) x] }
+    breakLoopOptions BusNetworks{bns} = breakLoopOptions (head bns)
+    breakLoopDecision nets@BusNetworks{bns} x = nets { bns = [breakLoopDecision (head bns) x] }
 
 instance (UnitTag tag, VarValTime v x t) => OptimizeAccumProblem (BusNetworks tag v x t) v x where
-    optimizeAccumOptions BusNetworks{networks} = optimizeAccumOptions (head networks)
-    optimizeAccumDecision nets@BusNetworks{networks} x = nets { networks = [optimizeAccumDecision (head networks) x] }
+    optimizeAccumOptions BusNetworks{bns} = optimizeAccumOptions (head bns)
+    optimizeAccumDecision nets@BusNetworks{bns} x = nets { bns = [optimizeAccumDecision (head bns) x] }
 
 instance (UnitTag tag, VarValTime v x t) => ConstantFoldingProblem (BusNetworks tag v x t) v x where
-    constantFoldingOptions BusNetworks{networks} = constantFoldingOptions (head networks)
-    constantFoldingDecision nets@BusNetworks{networks} x = nets { networks = [constantFoldingDecision (head networks) x] }
+    constantFoldingOptions BusNetworks{bns} = constantFoldingOptions (head bns)
+    constantFoldingDecision nets@BusNetworks{bns} x = nets { bns = [constantFoldingDecision (head bns) x] }
 
 instance (UnitTag tag, VarValTime v x t) => ResolveDeadlockProblem (BusNetworks tag v x t) v x where
-    resolveDeadlockOptions BusNetworks{networks} = resolveDeadlockOptions (head networks)
-    resolveDeadlockDecision nets@BusNetworks{networks} x = nets { networks = [resolveDeadlockDecision (head networks) x] }
+    resolveDeadlockOptions BusNetworks{bns} = resolveDeadlockOptions (head bns)
+    resolveDeadlockDecision nets@BusNetworks{bns} x = nets { bns = [resolveDeadlockDecision (head bns) x] }
 
 instance UnitTag tag => AllocationProblem (BusNetworks tag v x t) tag where
-    allocationOptions BusNetworks{networks} = allocationOptions (head networks)
-    allocationDecision nets@BusNetworks{networks} x = nets { networks = [allocationDecision (head networks) x] }
+    allocationOptions BusNetworks{bns} = allocationOptions (head bns)
+    allocationDecision nets@BusNetworks{bns} x = nets { bns = [allocationDecision (head bns) x] }
     
 instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks tag v x t) where
-    moduleName _tag BusNetworks{networks} = moduleName _tag (head networks)
-    hardware tag BusNetworks{networks} = hardware tag (head networks)
-    software tag BusNetworks{networks} = software tag (head networks)
-    hardwareInstance tag BusNetworks{networks} _ = 
+    moduleName _tag BusNetworks{bns} = moduleName _tag (head bns)
+    hardware tag BusNetworks{bns} = hardware tag (head bns)
+    software tag BusNetworks{bns} = software tag (head bns)
+    hardwareInstance tag BusNetworks{bns} _ = 
       let
-        net = head networks
+        net = head bns
       in hardwareInstance tag net $ bnEnv net
 
 instance (UnitTag tag, VarValTime v x t) => Testable (BusNetworks tag v x t) v x where
-    testBenchImplementation proj@Project{pUnit = BusNetworks{networks}} = 
+    testBenchImplementation proj@Project{pUnit = BusNetworks{bns}} = 
       let
-        net = head networks
+        net = head bns
       in testBenchImplementation proj {pUnit = net, pUnitEnv = bnEnv net}
 
 data BusNetwork tag v x t = BusNetwork
@@ -198,8 +198,8 @@ instance (Default t, IsString tag) => Default (BusNetwork tag v x t) where
 instance Var v => Variables (BusNetwork tag v x t) v where
     variables BusNetwork{bnBound} = unionsMap variables $ concat $ M.elems bnBound
 
-boundFunctions puTitle BusNetworks{networks}
-    | puTitle `M.member` bnBound (head networks) = bnBound (head networks) M.! puTitle
+boundFunctions puTitle BusNetworks{bns}
+    | puTitle `M.member` bnBound (head bns) = bnBound (head bns) M.! puTitle
     | otherwise = []
 
 instance Default x => DefaultX (BusNetwork tag v x t) x

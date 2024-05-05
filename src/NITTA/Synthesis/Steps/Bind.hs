@@ -172,8 +172,8 @@ waitingTimeOfVariables net =
     , variable <- S.elems (variables srcEp S.\\ unionsMap (variables . snd) dfTargets)
     ]
 
-optionsAfterBind f tag TargetSystem{mUnit = BusNetworks{networks}} =
-    case tryBind f (bnPus (head networks) M.! tag) of
+optionsAfterBind f tag TargetSystem{mUnit = BusNetworks{bns}} =
+    case tryBind f (bnPus (head bns) M.! tag) of
         Right pu' -> filter (\(EndpointSt act _) -> act `optionOf` f) $ endpointOptions pu'
         _ -> []
     where

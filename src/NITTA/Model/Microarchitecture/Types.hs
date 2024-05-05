@@ -26,7 +26,7 @@ import NITTA.Model.Networks.Types
 import NITTA.Utils.Base
 
 data MicroarchitectureDesc tag = MicroarchitectureDesc
-    { nets :: [NetworkDesc tag]
+    { networks :: [NetworkDesc tag]
     , ioSyncMode :: IOSynchronization
     }
     deriving (Generic)
@@ -67,8 +67,8 @@ mkNetworkDesc BusNetwork{bnName, bnPus} =
       }
 
 microarchitectureDesc :: forall tag v x t. Typeable x => BusNetworks tag v x t -> MicroarchitectureDesc tag
-microarchitectureDesc BusNetworks{networks, ioSync} = 
+microarchitectureDesc BusNetworks{bns, ioSync} = 
   MicroarchitectureDesc
-      { nets = map mkNetworkDesc networks
+      { networks = map mkNetworkDesc bns
       , ioSyncMode = ioSync
       }
