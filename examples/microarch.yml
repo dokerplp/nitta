@@ -19,6 +19,7 @@ nets:
         isSlave: true
         bufferSize: 6
         bounceFilter: 0
+  net2:
     protos:
       shift{x}:
         type: Shift

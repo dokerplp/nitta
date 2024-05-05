@@ -39,6 +39,7 @@ import NITTA.Model.Networks.Bus (
     addCustom,
     addCustomPrototype,
     busNetwork,
+    busNetworks,
     modifyNetwork,
  ) 
 import NITTA.Model.Networks.Types (IOSynchronization)
@@ -142,18 +143,7 @@ mkMicroarchitecture MicroarchitectureConf{mock, ioSync, library, nets} =
                                     , master_sclk = PU.OutputPortTag sclk
                                     , master_cs = PU.OutputPortTag cs
                                     }
-        mkNetwork name net = modifyNetwork (busNetwork name ioSync) (build net)
-     in case M.toList nets of
-            [(name, net)] -> BusNetworks
-                                  { networks = [mkNetwork name net]
-                                  , bnsEnv = def
-                                  }
-            _ -> error "multi-networks are not currently supported"
-            
--- mkNetworks nets_ = BusNetworks
---                               { networks = mkNetworks' [] nets_
---                               }
---
---        mkNetworks' acc [] = acc
---        mkNetworks' acc [(name, net) : nets_] = mkNetworks (acc + mkNetwork name net) nets_
---     in mk
+        mkNetwork name net = modifyNetwork (busNetwork name ioSync) (build net)  
+        mkNetworks [] = []
+        mkNetworks ((name, net) : nets_) = mkNetwork name net : mkNetworks nets_
+     in busNetworks (mkNetworks $ M.toList nets) ioSync

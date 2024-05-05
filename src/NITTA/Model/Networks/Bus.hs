@@ -23,7 +23,9 @@ module NITTA.Model.Networks.Bus (
     boundFunctions,
     controlSignalLiteral,
     busNetwork,
-    makeNetworks,
+    busNetworks,
+    busNetworks',
+    busNetworks'',
     bnPus',
 
     -- * Builder
@@ -65,27 +67,40 @@ import Text.Regex
 
 data BusNetworks tag v x t = BusNetworks
     { networks :: [BusNetwork tag v x t]
+    , ioSync :: IOSynchronization
     , bnsEnv :: UnitEnv (BusNetworks tag v x t)
     }
     
 bnPus' = bnPus . head . networks
     
-makeNetworks :: BusNetwork tag v x t -> BusNetworks tag v x t
-makeNetworks net = 
+        
+busNetworks :: [BusNetwork tag v x t] -> IOSynchronization -> BusNetworks tag v x t
+busNetworks nets iosync =
     BusNetworks
-        { networks = [net]
+        { networks = nets
+        , ioSync = iosync
         , bnsEnv = def
         }
 
-busNetworks :: Default t => tag -> IOSynchronization -> BusNetworks tag v x t
-busNetworks name iosync =
+busNetworks' :: Default t => tag -> IOSynchronization -> BusNetworks tag v x t
+busNetworks' name iosync =
     BusNetworks
         { networks = [busNetwork name iosync]
+        , ioSync = iosync
         , bnsEnv = def
         }
+        
+busNetworks'' :: BusNetwork tag v x t -> IOSynchronization -> BusNetworks tag v x t
+busNetworks'' net iosync = 
+    BusNetworks
+        { networks = [net]
+        , ioSync = iosync
+        , bnsEnv = def
+        }
+       
 
 instance (Default t, IsString tag) => Default (BusNetworks tag v x t) where
-    def = busNetworks "defaultBus" ASync
+    def = busNetworks' "defaultBus" ASync
 
 instance Var v => Variables (BusNetworks tag v x t) v where
     variables BusNetworks{networks} = variables (head networks)
@@ -158,7 +173,7 @@ data BusNetwork tag v x t = BusNetwork
     -- ^ Map of process units.
     , bnSignalBusWidth :: Int
     -- ^ Controll bus width.
-    , ioSync :: IOSynchronization
+    , bnIoSync :: IOSynchronization
     , bnEnv :: UnitEnv (BusNetwork tag v x t)
     , bnPUPrototypes :: M.Map tag (PUPrototype tag v x t)
     -- ^ Set of the PUs that could be added to the network during synthesis process
@@ -172,7 +187,7 @@ busNetwork name iosync =
         , bnProcess = def
         , bnPus = def
         , bnSignalBusWidth = 0
-        , ioSync = iosync
+        , bnIoSync = iosync
         , bnEnv = def
         , bnPUPrototypes = def
         }
@@ -706,7 +721,7 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetwork ta
                         ( .clk( clk )
                         , .rst( rst )
 
-                        , .signal_cycle_start( #{ isDrowAllowSignal ioSync } || stop )
+                        , .signal_cycle_start( #{ isDrowAllowSignal bnIoSync } || stop )
 
                         , .signals_out( control_bus )
 
@@ -800,7 +815,7 @@ instance (UnitTag tag, VarValTime v x t) => Testable (BusNetwork tag v x t) v x 
     testBenchImplementation
         Project
             { pName
-            , pUnit = bn@BusNetwork{bnPus, ioSync, bnName}
+            , pUnit = bn@BusNetwork{bnPus, bnIoSync, bnName}
             , pTestCntx = pTestCntx@Cntx{cntxProcess, cntxCycleNumber}
             } =
             let testEnv =
@@ -876,7 +891,7 @@ instance (UnitTag tag, VarValTime v x t) => Testable (BusNetwork tag v x t) v x 
 
                         // initialization flags
                         #{ if null envInitFlags then "" else "reg " <> hsep (punctuate ", " envInitFlags) <> ";" }
-                        assign env_init_flag = #{ hsep $ defEnvInitFlag envInitFlags ioSync };
+                        assign env_init_flag = #{ hsep $ defEnvInitFlag envInitFlags bnIoSync };
 
                         #{ testEnv }
 
@@ -894,7 +909,7 @@ instance (UnitTag tag, VarValTime v x t) => Testable (BusNetwork tag v x t) v x 
                             #{ nest 4 externalIO }
                             // if 1 - The process cycle are indipendent from a SPI.
                             // else - The process cycle are wait for the SPI.
-                            , .is_drop_allow( #{ isDrowAllowSignal ioSync } )
+                            , .is_drop_allow( #{ isDrowAllowSignal bnIoSync } )
                             );
 
                         // internal unit under test checks

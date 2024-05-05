@@ -350,5 +350,5 @@ instance UnitTag tag => ToSample (MicroarchitectureDesc tag) where
                 addCustom "fram1" (framWithSize 16) FramIO
                 addCustom "fram2" (framWithSize 32) FramIO
                 add "shift" ShiftIO
-            bns = makeNetworks bn
+            bns = busNetworks'' bn Sync
          in singleSample $ microarchitectureDesc bns

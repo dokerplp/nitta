@@ -248,9 +248,9 @@ main = do
                         error $
                             "auto_march flag means that an empty march with default prototypes will be used. "
                                 <> "Remove march flag or specify prototypes list in config file and remove auto_march."
-                    | auto_march = makeNetworks $ microarchWithProtos ioSync_
+                    | auto_march = busNetworks'' (microarchWithProtos ioSync_) ioSync_
                     | isJust confMa = fromJust confMa
-                    | otherwise = makeNetworks $ defMicroarch ioSync_
+                    | otherwise = busNetworks'' (defMicroarch ioSync_) ioSync_
 
             infoM "NITTA" $ "will trace: " <> S.join ", " (map (show . tvVar) frTrace)
 

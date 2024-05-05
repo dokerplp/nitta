@@ -50,26 +50,25 @@ data UnitDesc tag = UnitDesc
 
 instance ToJSON tag => ToJSON (UnitDesc tag)
 
+mkNetworkDesc :: forall tag v x t. Typeable x => BusNetwork tag v x t -> NetworkDesc tag
+mkNetworkDesc BusNetwork{bnName, bnPus} = 
+  NetworkDesc
+      { networkTag = bnName
+      , valueType = showText $ typeRep (Proxy :: Proxy x)
+      , units =
+          map
+              ( \(tag, PU{unit}) ->
+                  UnitDesc
+                      { unitTag = tag
+                      , unitType = T.pack $ takeWhile (' ' /=) $ show $ typeOf unit
+                      }
+              )
+              $ M.assocs bnPus
+      }
+
 microarchitectureDesc :: forall tag v x t. Typeable x => BusNetworks tag v x t -> MicroarchitectureDesc tag
-microarchitectureDesc BusNetworks{networks} = 
-  let
-    BusNetwork{bnName, bnPus, ioSync} = head networks
-  in
-    MicroarchitectureDesc
-        { nets =
-            [ NetworkDesc
-                { networkTag = bnName
-                , valueType = showText $ typeRep (Proxy :: Proxy x)
-                , units =
-                    map
-                        ( \(tag, PU{unit}) ->
-                            UnitDesc
-                                { unitTag = tag
-                                , unitType = T.pack $ takeWhile (' ' /=) $ show $ typeOf unit
-                                }
-                        )
-                        $ M.assocs bnPus
-                }
-            ]
-        , ioSyncMode = ioSync
-        }
+microarchitectureDesc BusNetworks{networks, ioSync} = 
+  MicroarchitectureDesc
+      { nets = map mkNetworkDesc networks
+      , ioSyncMode = ioSync
+      }
