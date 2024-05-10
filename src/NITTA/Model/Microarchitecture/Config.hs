@@ -144,6 +144,5 @@ mkMicroarchitecture MicroarchitectureConf{mock, ioSync, library, nets} =
                                     , master_cs = PU.OutputPortTag cs
                                     }
         mkNetwork name net = modifyNetwork (busNetwork name) (build net)  
-        mkNetworks [] = []
-        mkNetworks ((name, net) : nets_) = mkNetwork name net : mkNetworks nets_
+        mkNetworks nets_ = map (\(name, net) -> mkNetwork name net) nets_
      in busNetworks (mkNetworks $ M.toList nets) ioSync
