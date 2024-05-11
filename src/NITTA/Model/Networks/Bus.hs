@@ -72,22 +72,22 @@ data BusNetworks tag v x t = BusNetworks
     , bnsEnv :: UnitEnv (BusNetworks tag v x t)
     }
 
---netMap f nets@BusNetworks{bns} = nets {bns = map f bns}
-
-mergeNets bns =
+mergeNets [] = error "Networks list can't be empty"
+mergeNets bns@(n : _) =
   BusNetwork
-    { bnName = "net228"
+    { bnName = bnName n
     , bnRemains = mergeMap bnRemains bns
     , bnBound = unionsMap' bnBound bns
-    , bnProcess = def
+    , bnProcess = bnProcess n
     , bnPus = unionsMap' bnPus bns
-    , bnSignalBusWidth = 0
-    , bnEnv = def
+    , bnSignalBusWidth = bnSignalBusWidth n
+    , bnEnv = bnEnv n
     , bnPUPrototypes = unionsMap' bnPUPrototypes bns
     }
-    
-bnPus' = bnPus . head . bns
-    
+
+
+bnPus' BusNetworks{bns} = unionsMap' bnPus bns
+
         
 busNetworks :: [BusNetwork tag v x t] -> IOSynchronization -> BusNetworks tag v x t
 busNetworks nets iosync =
@@ -168,8 +168,9 @@ instance UnitTag tag => AllocationProblem (BusNetworks tag v x t) tag where
     allocationDecision nets@BusNetworks{bns} x = nets { bns = map (\n -> allocationDecision n x) bns }
     
 instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks tag v x t) where
-    moduleName _tag BusNetworks{bns} = moduleName _tag $ mergeNets bns
-    hardware tag BusNetworks{bns, ioSync} = bnHardware $ mergeNets bns where
+    moduleName _ _  = "nets"
+    hardware tag nets@BusNetworks{bns, ioSync} = Aggregate (Just $ mn_) (map bnHardware bns) where
+      mn_ = toString $ moduleName tag nets
       bnHardware pu@BusNetwork{..} =
           let (instances, valuesRegs) = renderInstance [] [] $ M.assocs bnPus
               mn = moduleName tag pu
@@ -473,9 +474,13 @@ instance (Default t, IsString tag) => Default (BusNetwork tag v x t) where
 instance Var v => Variables (BusNetwork tag v x t) v where
     variables BusNetwork{bnBound} = unionsMap variables $ concat $ M.elems bnBound
 
-boundFunctions puTitle BusNetworks{bns}
-    | puTitle `M.member` bnBound (head bns) = bnBound (head bns) M.! puTitle
+boundFunctions' :: Ord k => k -> BusNetwork k v x t -> [F v x]
+boundFunctions' puTitle BusNetwork{bnBound}
+    | puTitle `M.member` bnBound = bnBound M.! puTitle
     | otherwise = []
+
+boundFunctions :: Ord k => k -> BusNetworks k v x t -> [F v x]
+boundFunctions puTitle BusNetworks{bns} = mergeMap (boundFunctions' puTitle) bns
 
 instance Default x => DefaultX (BusNetwork tag v x t) x
 
@@ -859,7 +864,9 @@ instance (UnitTag tag, VarValTime v x t) => ResolveDeadlockProblem (BusNetwork t
             puOutputs tag =
                 unionsMap variables $
                     filter (\case Source{} -> True; _ -> False) $
-                        endPointRoles M.! tag
+                        if M.member tag endPointRoles
+                          then endPointRoles M.! tag
+                          else error $ "Element with tag " <> show tag <> " not found in " <> show endPointRoles
 
             var2endpointRole =
                 M.fromList

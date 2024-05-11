@@ -73,7 +73,7 @@ import Numeric.Interval.NonEmpty qualified as I
 import Prettyprinter
 
 -- | Class for processor unit tag or "name"
-class (Typeable tag, Ord tag, ToString tag, IsString tag, Semigroup tag) => UnitTag tag where
+class (Typeable tag, Ord tag, ToString tag, IsString tag, Semigroup tag, Show tag) => UnitTag tag where
     -- | Whether the value can be used as a template or not
     isTemplate :: tag -> Bool
 

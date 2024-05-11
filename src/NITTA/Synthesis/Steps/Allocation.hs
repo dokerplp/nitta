@@ -40,6 +40,7 @@ import NITTA.Synthesis.Types (
     SynthesisDecisionCls (..),
     SynthesisState (SynthesisState, numberOfProcessWaves, processWaves, sTarget),
  )
+import NITTA.Utils
 
 data AllocationMetrics = AllocationMetrics
     { mParallelism :: ParallelismType
@@ -69,13 +70,14 @@ instance
     decisions SynthesisState{sTarget} o = [(o, allocationDecision sTarget o)]
 
     parameters SynthesisState{sTarget = TargetSystem{mUnit = BusNetworks{bns}}, processWaves, numberOfProcessWaves} Allocation{processUnitTag} _ =
-        let net = head bns
-            pus = M.elems $ bnPus net
-            tmp = bnPUPrototypes net M.! processUnitTag
+        let pus = M.elems $ unionsMap' bnPus bns
+            protos = unionsMap' bnPUPrototypes bns
+            remains = mergeMap bnRemains bns
+            tmp = protos M.! processUnitTag
             mParallelism PUPrototype{pProto} = parallelismType pProto
             canProcessTmp PUPrototype{pProto} f = allowToProcess f pProto
             canProcessPU PU{unit} f = allowToProcess f unit
-            relatedRemains = filter (canProcessTmp tmp) $ bnRemains net
+            relatedRemains = filter (canProcessTmp tmp) $ remains
             fCountByWaves = map (\ProcessWave{pwFs} -> length $ filter (canProcessTmp tmp) pwFs) processWaves
          in AllocationMetrics
                 { mParallelism = mParallelism tmp

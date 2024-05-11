@@ -4,6 +4,16 @@ valueType: fx32.32
 nets:
   net1:
     pus:
+    #    protos:
+    #      fram{x}:
+    #        type: Fram
+    #        size: 32
+    #      accum{x}:
+    #        type: Accum
+    #      mul:
+    #        type: Multiplier
+  net2:
+    pus:
       spi:
         type: SPI
         mosi: mosi
@@ -18,11 +28,4 @@ nets:
         type: Fram
         size: 32
       accum{x}:
-        type: Accum
-  net2:
-    protos:
-      frammm{x}:
-        type: Fram
-        size: 32
-      accummm{x}:
         type: Accum
