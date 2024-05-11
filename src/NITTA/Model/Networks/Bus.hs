@@ -49,6 +49,7 @@ import Data.String.Interpolate
 import Data.String.ToString
 import Data.Text qualified as T
 import Data.Typeable
+import Debug.Trace
 import NITTA.Intermediate.Types
 import NITTA.Model.Networks.Types
 import NITTA.Model.Problems
@@ -69,6 +70,20 @@ data BusNetworks tag v x t = BusNetworks
     { bns :: [BusNetwork tag v x t]
     , ioSync :: IOSynchronization
     , bnsEnv :: UnitEnv (BusNetworks tag v x t)
+    }
+
+--netMap f nets@BusNetworks{bns} = nets {bns = map f bns}
+
+mergeNets bns =
+  BusNetwork
+    { bnName = "net228"
+    , bnRemains = mergeMap bnRemains bns
+    , bnBound = unionsMap' bnBound bns
+    , bnProcess = def
+    , bnPus = unionsMap' bnPus bns
+    , bnSignalBusWidth = 0
+    , bnEnv = def
+    , bnPUPrototypes = unionsMap' bnPUPrototypes bns
     }
     
 bnPus' = bnPus . head . bns
@@ -103,52 +118,58 @@ instance (Default t, IsString tag) => Default (BusNetworks tag v x t) where
     def = busNetworks' "defaultBus" ASync
 
 instance Var v => Variables (BusNetworks tag v x t) v where
-    variables BusNetworks{bns} = variables (head bns)
+    variables BusNetworks{bns} = unionsMap variables bns
 
 instance Default x => DefaultX (BusNetworks tag v x t) x
 
 instance WithFunctions (BusNetworks tag v x t) (F v x) where
-    functions BusNetworks{bns} = functions (head bns)
+    functions BusNetworks{bns} = mergeMap functions bns
 
 instance (UnitTag tag, VarValTime v x t) => DataflowProblem (BusNetworks tag v x t) tag v t where
-    dataflowOptions BusNetworks{bns} = dataflowOptions (head bns)
-    dataflowDecision nets@BusNetworks{bns} x = nets { bns = [dataflowDecision (head bns) x] }
+    dataflowOptions BusNetworks{bns} = mergeMap dataflowOptions bns
+    dataflowDecision nets@BusNetworks{bns} x =
+      nets { bns = map (\n -> dataflowDecision n x) bns }
 
 instance (UnitTag tag, VarValTime v x t) => ProcessorUnit (BusNetworks tag v x t) v x t where
-    tryBind f nets@BusNetworks{bns} = case tryBind f (head bns) of
-      Left err -> Left err
-      Right net -> Right nets { bns = [net] }
-    process BusNetworks{bns} = process (head bns)
-    parallelismType BusNetworks{bns} = parallelismType (head bns)
-    puSize BusNetworks{bns} = puSize (head bns)
+    tryBind f nets_ = tryBind'' nets_ where
+      tryBind'' = tryBind' "" []
+      tryBind' errMsg _ BusNetworks{bns = []} = Left errMsg
+      tryBind' errMsg acc nets@BusNetworks{bns = n : ns} = case tryBind f n of
+        Left err -> tryBind' (errMsg <> "\n" <> err) (n : acc) nets {bns = ns}
+        Right net -> Right nets {bns = net : (acc ++ ns)}
+
+    process BusNetworks{bns} = process $ mergeNets bns
+    parallelismType _ = error " not support parallelismType for BusNetworks"
+    puSize BusNetworks{bns} = foldl1 (+) $ map puSize bns
+
 
 instance (UnitTag tag, VarValTime v x t) => BindProblem (BusNetworks tag v x t) tag v x where
-    bindOptions BusNetworks{bns} = bindOptions (head bns)
-    bindDecision nets@BusNetworks{bns} x = nets { bns = [bindDecision (head bns) x] }
+    bindOptions BusNetworks{bns} = mergeMap bindOptions bns
+    bindDecision nets@BusNetworks{bns} x = nets { bns = map (\n -> bindDecision n x) bns }
 
 instance (UnitTag tag, VarValTime v x t) => BreakLoopProblem (BusNetworks tag v x t) v x where
-    breakLoopOptions BusNetworks{bns} = breakLoopOptions (head bns)
-    breakLoopDecision nets@BusNetworks{bns} x = nets { bns = [breakLoopDecision (head bns) x] }
+    breakLoopOptions BusNetworks{bns} = mergeMap breakLoopOptions bns
+    breakLoopDecision nets@BusNetworks{bns} x = nets { bns = map (\n -> breakLoopDecision n x) bns }
 
 instance (UnitTag tag, VarValTime v x t) => OptimizeAccumProblem (BusNetworks tag v x t) v x where
-    optimizeAccumOptions BusNetworks{bns} = optimizeAccumOptions (head bns)
-    optimizeAccumDecision nets@BusNetworks{bns} x = nets { bns = [optimizeAccumDecision (head bns) x] }
+    optimizeAccumOptions BusNetworks{bns} = mergeMap optimizeAccumOptions bns
+    optimizeAccumDecision nets@BusNetworks{bns} x = nets { bns = map (\n -> optimizeAccumDecision n x) bns }
 
 instance (UnitTag tag, VarValTime v x t) => ConstantFoldingProblem (BusNetworks tag v x t) v x where
-    constantFoldingOptions BusNetworks{bns} = constantFoldingOptions (head bns)
-    constantFoldingDecision nets@BusNetworks{bns} x = nets { bns = [constantFoldingDecision (head bns) x] }
+    constantFoldingOptions BusNetworks{bns} = mergeMap constantFoldingOptions bns
+    constantFoldingDecision nets@BusNetworks{bns} x = nets { bns = map (\n -> constantFoldingDecision n x) bns }
 
 instance (UnitTag tag, VarValTime v x t) => ResolveDeadlockProblem (BusNetworks tag v x t) v x where
-    resolveDeadlockOptions BusNetworks{bns} = resolveDeadlockOptions (head bns)
-    resolveDeadlockDecision nets@BusNetworks{bns} x = nets { bns = [resolveDeadlockDecision (head bns) x] }
+    resolveDeadlockOptions BusNetworks{bns} = mergeMap resolveDeadlockOptions bns
+    resolveDeadlockDecision nets@BusNetworks{bns} x = nets { bns = map (\n -> resolveDeadlockDecision n x) bns }
 
 instance UnitTag tag => AllocationProblem (BusNetworks tag v x t) tag where
-    allocationOptions BusNetworks{bns} = allocationOptions (head bns)
-    allocationDecision nets@BusNetworks{bns} x = nets { bns = [allocationDecision (head bns) x] }
+    allocationOptions BusNetworks{bns} = mergeMap allocationOptions bns
+    allocationDecision nets@BusNetworks{bns} x = nets { bns = map (\n -> allocationDecision n x) bns }
     
 instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks tag v x t) where
-    moduleName _tag BusNetworks{bns} = moduleName _tag (head bns)
-    hardware tag BusNetworks{bns, ioSync} = bnHardware (head bns) where 
+    moduleName _tag BusNetworks{bns} = moduleName _tag $ mergeNets bns
+    hardware tag BusNetworks{bns, ioSync} = bnHardware $ mergeNets bns where
       bnHardware pu@BusNetwork{..} =
           let (instances, valuesRegs) = renderInstance [] [] $ M.assocs bnPus
               mn = moduleName tag pu
@@ -882,10 +903,12 @@ instance UnitTag tag => AllocationProblem (BusNetwork tag v x t) tag where
         let tag = networkTag <> "_" <> fromTemplate processUnitTag (show (length bnPus))
             prototype =
                 if M.member processUnitTag bnPUPrototypes
-                    then bnPUPrototypes M.! processUnitTag
-                    else error $ "No suitable prototype for the tag (" <> toString processUnitTag <> ")"
+                    then Right $ bnPUPrototypes M.! processUnitTag
+                    else Left $ "No suitable prototype for the tag (" <> toString processUnitTag <> ")"
             addPU t PUPrototype{pProto, pIOPorts} = modifyNetwork bn $ do addCustom t pProto pIOPorts
-            nBn = addPU tag prototype
+            nBn = case prototype of 
+              Left err -> trace err bn
+              Right proto -> addPU tag proto
          in nBn
                 { bnProcess = execScheduleWithProcess bn bnProcess $ scheduleAllocation alloc
                 , bnPUPrototypes =

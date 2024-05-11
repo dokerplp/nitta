@@ -1,12 +1,6 @@
 mock: true
 ioSync: Sync
 valueType: fx32.32
-library:
-  fram{x}: # If you want a PU can be allocated only once, remove {x} from the PU name.
-    type: Fram
-    size: 32
-  accum{x}:
-    type: Accum
 nets:
   net1:
     pus:
@@ -19,13 +13,16 @@ nets:
         isSlave: true
         bufferSize: 6
         bounceFilter: 0
+    protos:
+      fram{x}:
+        type: Fram
+        size: 32
+      accum{x}:
+        type: Accum
   net2:
     protos:
-      shift{x}:
-        type: Shift
-        sRight: true
-      mul{x}:
-        type: Multiplier
-      div{x}:
-        type: Divider
-        pipeline: 4
+      frammm{x}:
+        type: Fram
+        size: 32
+      accummm{x}:
+        type: Accum
