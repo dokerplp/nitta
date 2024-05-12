@@ -276,8 +276,34 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks t
                               L.sortOn ((\ix -> read ix :: Int) . head . fromJust . matchRegex (mkRegex "([[:digit:]]+)") . T.unpack . signalTag . fst) $
                                   M.assocs arr
 
-    hardwareInstance tag BusNetworks{bns} _ =
-      vsep $ map (\n -> hardwareInstance tag n (bnEnv n)) bns
+    hardwareInstance _ BusNetworks{bns} _ = vsep $ map (\n -> bnHardwareInstance n) bns where 
+      bnHardwareInstance BusNetwork{bnName, bnEnv = UnitEnv{sigRst, sigClk, ioPorts = Just ioPorts}}
+                      | let mn = toString $ bnName
+                            io2v n = [i|, .#{ n }( #{ n } )|]
+                            is = map (io2v . inputPortTag) $ S.toList $ inputPorts ioPorts
+                            os = map (io2v . outputPortTag) $ S.toList $ outputPorts ioPorts =
+                          [__i|
+                                  wire [DATA_WIDTH-1:0] #{ mn }_data_out;
+                                  #{ mn } \#
+                                          ( .DATA_WIDTH( #{ dataWidth (def :: x) } )
+                                          , .ATTR_WIDTH( #{ attrWidth (def :: x) } )
+                                          ) net
+                                      ( .rst( #{ sigRst } )
+                                      , .clk( #{ sigClk } )
+                                      // inputs:
+                                      #{ nest 4 $ vsep is }
+                                      // outputs:
+                                      #{ nest 4 $ vsep os }
+                                      , .debug_status( debug_status ) // FIXME:
+                                      , .debug_bus1( debug_bus1 )     // FIXME:
+                                      , .debug_bus2( debug_bus2 )     // FIXME:
+                                      , .is_drop_allow( rendezvous )  // FIXME:
+                                      , .global_data_in ( global_data_bus )
+                                      , .global_data_out ( #{ mn }_data_out ) 
+                                      );
+                              |]
+      bnHardwareInstance _bn =
+          error "BusNetwork should be NetworkEnv"
 
 instance (UnitTag tag, VarValTime v x t) => Testable (BusNetworks tag v x t) v x where
     testBenchImplementation proj@Project{pUnit = BusNetworks{bns, ioSync}} = 
@@ -980,38 +1006,11 @@ externalPortsDecl ports =
         )
         ports
 
-instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetwork tag v x t) where
+instance (UnitTag tag) => TargetSystemComponent (BusNetwork tag v x t) where
     moduleName _tag BusNetwork{bnName} = toText bnName
     hardware _ _ = error "Implemented in BusNetworks"
     software _ _ = error "Implemented in BusNetworks"
-
-    hardwareInstance _ BusNetwork{bnName, bnEnv = UnitEnv{sigRst, sigClk, ioPorts = Just ioPorts}} _
-                | let mn = toString $ bnName
-                      io2v n = [i|, .#{ n }( #{ n } )|]
-                      is = map (io2v . inputPortTag) $ S.toList $ inputPorts ioPorts
-                      os = map (io2v . outputPortTag) $ S.toList $ outputPorts ioPorts =
-                    [__i|
-                            wire [DATA_WIDTH-1:0] #{ mn }_data_out;
-                            #{ mn } \#
-                                    ( .DATA_WIDTH( #{ dataWidth (def :: x) } )
-                                    , .ATTR_WIDTH( #{ attrWidth (def :: x) } )
-                                    ) net
-                                ( .rst( #{ sigRst } )
-                                , .clk( #{ sigClk } )
-                                // inputs:
-                                #{ nest 4 $ vsep is }
-                                // outputs:
-                                #{ nest 4 $ vsep os }
-                                , .debug_status( debug_status ) // FIXME:
-                                , .debug_bus1( debug_bus1 )     // FIXME:
-                                , .debug_bus2( debug_bus2 )     // FIXME:
-                                , .is_drop_allow( rendezvous )  // FIXME:
-                                , .global_data_in ( global_data_bus )
-                                , .global_data_out ( #{ mn }_data_out ) 
-                                );
-                        |]
-    hardwareInstance _title _bn _env =
-        error "BusNetwork should be NetworkEnv"
+    hardwareInstance _ _ _ = error "Implemented in BusNetworks"
 
 instance Connected (BusNetwork tag v x t) where
     data Ports (BusNetwork tag v x t) = BusNetworkPorts
