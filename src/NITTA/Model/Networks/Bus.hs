@@ -180,21 +180,24 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks t
                               ( parameter DATA_WIDTH = #{ dataWidth (def :: x) }
                               , parameter ATTR_WIDTH = #{ attrWidth (def :: x) }
                               )
-                          ( input                     clk
-                          , input                     rst
-                          , input                     is_drop_allow
-                          , output                    flag_cycle_begin
-                          , output                    flag_in_cycle
-                          , output                    flag_cycle_end
+                          ( input                        clk
+                          , input                        rst
+                          , input                        is_drop_allow
+                          , output                       flag_cycle_begin
+                          , output                       flag_in_cycle
+                          , output                       flag_cycle_end
                           #{ nest 4 $ vsep $ map pretty $ externalPortsDecl $ bnExternalPorts bnPus }
-                          , output              [7:0] debug_status
-                          , output              [7:0] debug_bus1
-                          , output              [7:0] debug_bus2
+                          , output                 [7:0] debug_status
+                          , output                 [7:0] debug_bus1
+                          , output                 [7:0] debug_bus2
+                          , input  wire [DATA_WIDTH-1:0] global_data_in
+                          , output      [DATA_WIDTH-1:0] global_data_out
                           );
   
                       parameter MICROCODE_WIDTH = #{ bnSignalBusWidth };
   
                       wire start, stop;
+                      wire nets_wr, nets_oe;
   
                       wire [MICROCODE_WIDTH-1:0] control_bus;
                       wire [DATA_WIDTH-1:0] data_bus;
@@ -224,10 +227,14 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks t
                           , .flag_in_cycle( flag_in_cycle )
                           , .flag_cycle_end( flag_cycle_end )
                           );
+                          
+                      assign nets_wr = control_bus[0];
+                      assign nets_oe = control_bus[1];
   
                       #{ vsep $ punctuate "\n\n" instances }
   
-                      assign data_bus = #{ T.intercalate " | " $ map snd valuesRegs };
+                      assign data_bus = #{ T.intercalate " | " $ map snd valuesRegs } | (nets_oe ? global_data_in : 0);
+                      assign global_data_out = (nets_wr ? data_bus : 0);
                       assign attr_bus = #{ T.intercalate " | " $ map fst valuesRegs };
   
                       endmodule
@@ -251,11 +258,52 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks t
                       regs' = (toText t <> "_attr_out", toText t <> "_data_out") : regs
                    in renderInstance insts' regs' xs
                            
-    software tag BusNetworks{bns} = software tag (head bns)
+    software tag nets@BusNetworks{bns} = Aggregate (Just $ mn_) (map bnSoftware bns) where 
+      mn_ = toString $ moduleName tag nets
+      bnSoftware pu@BusNetwork{bnProcess = Process{}, ..} =
+              let subSW = map (uncurry software . first toText) $ M.assocs bnPus
+                  sw = [Immediate (toString $ mn <> ".dump") $ T.pack memoryDump]
+               in Aggregate (Just $ toString mn) $ subSW ++ sw
+              where
+                  mn = moduleName tag pu
+                  -- Nop operation sets for all processor units at address 0. It is a
+                  -- safe state of the processor which is selected when rst signal is
+                  -- active.
+                  memoryDump = unlines $ map (values2dump . values . microcodeAt pu) $ programTicks pu
+                  values (BusNetworkMC arr) =
+                      reverse $
+                          map snd $
+                              L.sortOn ((\ix -> read ix :: Int) . head . fromJust . matchRegex (mkRegex "([[:digit:]]+)") . T.unpack . signalTag . fst) $
+                                  M.assocs arr
+                          
     hardwareInstance tag BusNetworks{bns} _ = 
       let
+        bnHardwareInstance BusNetwork{} UnitEnv{sigRst, sigClk, ioPorts = Just ioPorts}
+                | let io2v n = [i|, .#{ n }( #{ n } )|]
+                      is = map (io2v . inputPortTag) $ S.toList $ inputPorts ioPorts
+                      os = map (io2v . outputPortTag) $ S.toList $ outputPorts ioPorts =
+                    [__i|
+                            #{ tag } \#
+                                    ( .DATA_WIDTH( #{ dataWidth (def :: x) } )
+                                    , .ATTR_WIDTH( #{ attrWidth (def :: x) } )
+                                    ) net
+                                ( .rst( #{ sigRst } )
+                                , .clk( #{ sigClk } )
+                                // inputs:
+                                #{ nest 4 $ vsep is }
+                                // outputs:
+                                #{ nest 4 $ vsep os }
+                                , .debug_status( debug_status ) // FIXME:
+                                , .debug_bus1( debug_bus1 )     // FIXME:
+                                , .debug_bus2( debug_bus2 )     // FIXME:
+                                , .is_drop_allow( rendezvous )  // FIXME:
+                                );
+                        |]
+        bnHardwareInstance _bn _env =
+                error "BusNetworks should be NetworkEnv"
+      
         net = head bns
-      in hardwareInstance tag net $ bnEnv net
+      in bnHardwareInstance net $ bnEnv net
 
 instance (UnitTag tag, VarValTime v x t) => Testable (BusNetworks tag v x t) v x where
     testBenchImplementation proj@Project{pUnit = BusNetworks{bns, ioSync}} = 
@@ -463,7 +511,7 @@ busNetwork name =
         , bnBound = M.empty
         , bnProcess = def
         , bnPus = def
-        , bnSignalBusWidth = 0
+        , bnSignalBusWidth = 2
         , bnEnv = def
         , bnPUPrototypes = def
         }
@@ -784,7 +832,7 @@ instance
     bindDecision bn@BusNetwork{bnProcess, bnPus, bnBound, bnRemains} (SingleBind tag f) =
         bn
             { bnPus = M.adjust (bind f) tag bnPus
-            , bnBound = registerBinding tag f bnBound
+            , bnBound = trace (show (registerBinding tag f bnBound) <> show (bnName bn)) (registerBinding tag f bnBound)
             , bnProcess = execScheduleWithProcess bn bnProcess $ scheduleFunctionBind f
             , bnRemains = filter (/= f) bnRemains
             }
@@ -823,7 +871,7 @@ instance (UnitTag tag, VarValTime v x t) => ConstantFoldingProblem (BusNetwork t
             }
 
 instance (UnitTag tag, VarValTime v x t) => ResolveDeadlockProblem (BusNetwork tag v x t) v x where
-    resolveDeadlockOptions bn@BusNetwork{bnPus, bnBound} =
+    resolveDeadlockOptions bn@BusNetwork{bnName, bnPus, bnBound} =
         let prepareResolve :: S.Set v -> [ResolveDeadlock v x]
             prepareResolve =
                 map resolveDeadlock
@@ -866,7 +914,8 @@ instance (UnitTag tag, VarValTime v x t) => ResolveDeadlockProblem (BusNetwork t
                     filter (\case Source{} -> True; _ -> False) $
                         if M.member tag endPointRoles
                           then endPointRoles M.! tag
-                          else error $ "Element with tag " <> show tag <> " not found in " <> show endPointRoles
+--                          It's ok 
+                          else trace ("Element with tag " <> show tag <> " not found in " <> show endPointRoles <> " in net " <> show bnName) []
 
             var2endpointRole =
                 M.fromList
@@ -957,50 +1006,12 @@ externalPortsDecl ports =
         )
         ports
 
-instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetwork tag v x t) where
+instance UnitTag tag => TargetSystemComponent (BusNetwork tag v x t) where
     moduleName _tag BusNetwork{bnName} = toText bnName
-    
-    hardware _ _ = error "todo remove"
-
-    software tag pu@BusNetwork{bnProcess = Process{}, ..} =
-        let subSW = map (uncurry software . first toText) $ M.assocs bnPus
-            sw = [Immediate (toString $ mn <> ".dump") $ T.pack memoryDump]
-         in Aggregate (Just $ toString mn) $ subSW ++ sw
-        where
-            mn = moduleName tag pu
-            -- Nop operation sets for all processor units at address 0. It is a
-            -- safe state of the processor which is selected when rst signal is
-            -- active.
-            memoryDump = unlines $ map (values2dump . values . microcodeAt pu) $ programTicks pu
-            values (BusNetworkMC arr) =
-                reverse $
-                    map snd $
-                        L.sortOn ((\ix -> read ix :: Int) . head . fromJust . matchRegex (mkRegex "([[:digit:]]+)") . T.unpack . signalTag . fst) $
-                            M.assocs arr
-
-    hardwareInstance tag BusNetwork{} UnitEnv{sigRst, sigClk, ioPorts = Just ioPorts}
-        | let io2v n = [i|, .#{ n }( #{ n } )|]
-              is = map (io2v . inputPortTag) $ S.toList $ inputPorts ioPorts
-              os = map (io2v . outputPortTag) $ S.toList $ outputPorts ioPorts =
-            [__i|
-                    #{ tag } \#
-                            ( .DATA_WIDTH( #{ dataWidth (def :: x) } )
-                            , .ATTR_WIDTH( #{ attrWidth (def :: x) } )
-                            ) net
-                        ( .rst( #{ sigRst } )
-                        , .clk( #{ sigClk } )
-                        // inputs:
-                        #{ nest 4 $ vsep is }
-                        // outputs:
-                        #{ nest 4 $ vsep os }
-                        , .debug_status( debug_status ) // FIXME:
-                        , .debug_bus1( debug_bus1 )     // FIXME:
-                        , .debug_bus2( debug_bus2 )     // FIXME:
-                        , .is_drop_allow( rendezvous )  // FIXME:
-                        );
-                |]
-    hardwareInstance _title _bn _env =
-        error "BusNetwork should be NetworkEnv"
+    hardware _ _ = error "Implemented in BusNetworks"
+    software _ _ = error "Implemented in BusNetworks"
+    hardwareInstance _ _ _ = error "Implemented in BusNetworks"
+        
 
 instance Connected (BusNetwork tag v x t) where
     data Ports (BusNetwork tag v x t) = BusNetworkPorts

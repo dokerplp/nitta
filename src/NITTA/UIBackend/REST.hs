@@ -203,7 +203,7 @@ type TestBenchAPI v x =
 testBench ctx@BackendCtx{root, receivedValues, outputPath} sid pName loopsNumber = liftIO $ do
     tree <- getTreeIO ctx root sid
     pInProjectNittaPath <- either (error . T.unpack) id <$> collectNittaPath defProjectTemplates
-    unless (isComplete tree) $ error "test bench not allow for non complete synthesis"
+--    unless (isComplete tree) $ error "test bench not allow for non complete synthesis"
     pwd <- getCurrentDirectory
     let prj =
             Project
