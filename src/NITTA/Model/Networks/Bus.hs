@@ -227,7 +227,7 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks t
                           , .flag_in_cycle( flag_in_cycle )
                           , .flag_cycle_end( flag_cycle_end )
                           );
-                          
+
                       assign nets_wr = control_bus[0];
                       assign nets_oe = control_bus[1];
   
@@ -258,7 +258,7 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks t
                       regs' = (toText t <> "_attr_out", toText t <> "_data_out") : regs
                    in renderInstance insts' regs' xs
                            
-    software tag nets@BusNetworks{bns} = Aggregate (Just $ mn_) (map bnSoftware bns) where 
+    software tag nets@BusNetworks{bns} = Aggregate (Just $ mn_) (map bnSoftware bns) where
       mn_ = toString $ moduleName tag nets
       bnSoftware pu@BusNetwork{bnProcess = Process{}, ..} =
               let subSW = map (uncurry software . first toText) $ M.assocs bnPus
@@ -275,35 +275,9 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks t
                           map snd $
                               L.sortOn ((\ix -> read ix :: Int) . head . fromJust . matchRegex (mkRegex "([[:digit:]]+)") . T.unpack . signalTag . fst) $
                                   M.assocs arr
-                          
-    hardwareInstance tag BusNetworks{bns} _ = 
-      let
-        bnHardwareInstance BusNetwork{} UnitEnv{sigRst, sigClk, ioPorts = Just ioPorts}
-                | let io2v n = [i|, .#{ n }( #{ n } )|]
-                      is = map (io2v . inputPortTag) $ S.toList $ inputPorts ioPorts
-                      os = map (io2v . outputPortTag) $ S.toList $ outputPorts ioPorts =
-                    [__i|
-                            #{ tag } \#
-                                    ( .DATA_WIDTH( #{ dataWidth (def :: x) } )
-                                    , .ATTR_WIDTH( #{ attrWidth (def :: x) } )
-                                    ) net
-                                ( .rst( #{ sigRst } )
-                                , .clk( #{ sigClk } )
-                                // inputs:
-                                #{ nest 4 $ vsep is }
-                                // outputs:
-                                #{ nest 4 $ vsep os }
-                                , .debug_status( debug_status ) // FIXME:
-                                , .debug_bus1( debug_bus1 )     // FIXME:
-                                , .debug_bus2( debug_bus2 )     // FIXME:
-                                , .is_drop_allow( rendezvous )  // FIXME:
-                                );
-                        |]
-        bnHardwareInstance _bn _env =
-                error "BusNetworks should be NetworkEnv"
-      
-        net = head bns
-      in bnHardwareInstance net $ bnEnv net
+
+    hardwareInstance tag BusNetworks{bns} _ =
+      vsep $ map (\n -> hardwareInstance tag n (bnEnv n)) bns
 
 instance (UnitTag tag, VarValTime v x t) => Testable (BusNetworks tag v x t) v x where
     testBenchImplementation proj@Project{pUnit = BusNetworks{bns, ioSync}} = 
@@ -914,7 +888,7 @@ instance (UnitTag tag, VarValTime v x t) => ResolveDeadlockProblem (BusNetwork t
                     filter (\case Source{} -> True; _ -> False) $
                         if M.member tag endPointRoles
                           then endPointRoles M.! tag
---                          It's ok 
+--                          It's ok
                           else trace ("Element with tag " <> show tag <> " not found in " <> show endPointRoles <> " in net " <> show bnName) []
 
             var2endpointRole =
@@ -1006,12 +980,38 @@ externalPortsDecl ports =
         )
         ports
 
-instance UnitTag tag => TargetSystemComponent (BusNetwork tag v x t) where
+instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetwork tag v x t) where
     moduleName _tag BusNetwork{bnName} = toText bnName
     hardware _ _ = error "Implemented in BusNetworks"
     software _ _ = error "Implemented in BusNetworks"
-    hardwareInstance _ _ _ = error "Implemented in BusNetworks"
-        
+
+    hardwareInstance _ BusNetwork{bnName, bnEnv = UnitEnv{sigRst, sigClk, ioPorts = Just ioPorts}} _
+                | let mn = toString $ bnName
+                      io2v n = [i|, .#{ n }( #{ n } )|]
+                      is = map (io2v . inputPortTag) $ S.toList $ inputPorts ioPorts
+                      os = map (io2v . outputPortTag) $ S.toList $ outputPorts ioPorts =
+                    [__i|
+                            wire [DATA_WIDTH-1:0] #{ mn }_data_out;
+                            #{ mn } \#
+                                    ( .DATA_WIDTH( #{ dataWidth (def :: x) } )
+                                    , .ATTR_WIDTH( #{ attrWidth (def :: x) } )
+                                    ) net
+                                ( .rst( #{ sigRst } )
+                                , .clk( #{ sigClk } )
+                                // inputs:
+                                #{ nest 4 $ vsep is }
+                                // outputs:
+                                #{ nest 4 $ vsep os }
+                                , .debug_status( debug_status ) // FIXME:
+                                , .debug_bus1( debug_bus1 )     // FIXME:
+                                , .debug_bus2( debug_bus2 )     // FIXME:
+                                , .is_drop_allow( rendezvous )  // FIXME:
+                                , .global_data_in ( global_data_bus )
+                                , .global_data_out ( #{ mn }_data_out ) 
+                                );
+                        |]
+    hardwareInstance _title _bn _env =
+        error "BusNetwork should be NetworkEnv"
 
 instance Connected (BusNetwork tag v x t) where
     data Ports (BusNetwork tag v x t) = BusNetworkPorts
@@ -1027,7 +1027,7 @@ instance IOConnected (BusNetwork tag v x t) where
     inputPorts = extInputs
     outputPorts = extOutputs
     inoutPorts = extInOuts
-    
+
 
 isDrowAllowSignal Sync = bool2verilog False
 isDrowAllowSignal ASync = bool2verilog True
