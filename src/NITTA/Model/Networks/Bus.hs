@@ -276,14 +276,18 @@ instance (UnitTag tag, VarValTime v x t) => TargetSystemComponent (BusNetworks t
                               L.sortOn ((\ix -> read ix :: Int) . head . fromJust . matchRegex (mkRegex "([[:digit:]]+)") . T.unpack . signalTag . fst) $
                                   M.assocs arr
 
-    hardwareInstance _ BusNetworks{bns} _ = vsep $ map (\n -> bnHardwareInstance n) bns where 
+    hardwareInstance _ BusNetworks{bns} _ = vsep [globalDataBus, netVerilog] where
+      globalDataBus = [__i|
+                          wire [#{ dataWidth (def :: x) - 1 }:0] global_data_bus;
+                          |]
+      netVerilog = vsep $ map (\n -> bnHardwareInstance n) bns
       bnHardwareInstance BusNetwork{bnName, bnEnv = UnitEnv{sigRst, sigClk, ioPorts = Just ioPorts}}
                       | let mn = toString $ bnName
                             io2v n = [i|, .#{ n }( #{ n } )|]
                             is = map (io2v . inputPortTag) $ S.toList $ inputPorts ioPorts
                             os = map (io2v . outputPortTag) $ S.toList $ outputPorts ioPorts =
                           [__i|
-                                  wire [DATA_WIDTH-1:0] #{ mn }_data_out;
+                                  wire [#{ dataWidth (def :: x) - 1 }:0] #{ mn }_data_out;
                                   #{ mn } \#
                                           ( .DATA_WIDTH( #{ dataWidth (def :: x) } )
                                           , .ATTR_WIDTH( #{ attrWidth (def :: x) } )
