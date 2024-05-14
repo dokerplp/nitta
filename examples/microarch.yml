@@ -4,22 +4,22 @@ valueType: fx32.32
 nets:
   net1:
     pus:
-      spi:
-        type: SPI
-        mosi: mosi
-        miso: miso
-        sclk: sclk
-        cs: cs
-        isSlave: true
-        bufferSize: 6
-        bounceFilter: 0
-  net2:
-    pus:
-      mul:
-        type: Multiplier
-    protos:
-      fram{x}:
+      accum1:
+        type: Accum
+      fram1:
         type: Fram
         size: 32
-      accum{x}:
+  net2:
+    pus:
+      accum2:
         type: Accum
+      fram2:
+        type: Fram
+        size: 32
+  net3:
+    pus:
+      accum3:
+        type: Accum
+      fram3:
+        type: Fram
+        size: 32

@@ -126,7 +126,7 @@ instance WithFunctions (BusNetworks tag v x t) (F v x) where
     functions BusNetworks{bns} = mergeMap functions bns
 
 instance (UnitTag tag, VarValTime v x t) => DataflowProblem (BusNetworks tag v x t) tag v t where
-    dataflowOptions BusNetworks{bns} = mergeMap dataflowOptions bns
+    dataflowOptions BusNetworks{bns} = dataflowOptions $ mergeNets bns
     dataflowDecision nets@BusNetworks{bns} x =
       nets { bns = map (\n -> dataflowDecision n x) bns }
 
