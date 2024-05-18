@@ -35,12 +35,13 @@ import GHC.Generics (Generic)
 import NITTA.Intermediate.Value (Val)
 import NITTA.Intermediate.Variable (Var)
 import NITTA.Model.Networks.Bus (
-    BusNetwork,
+    BusNetworks (..),
     addCustom,
     addCustomPrototype,
     busNetwork,
+    busNetworks,
     modifyNetwork,
- )
+ ) 
 import NITTA.Model.Networks.Types (IOSynchronization)
 import NITTA.Model.ProcessorUnits qualified as PU
 import System.Directory (createDirectoryIfMissing)
@@ -93,7 +94,7 @@ data MicroarchitectureConf = MicroarchitectureConf
     , ioSync :: IOSynchronization
     , valueType :: T.Text
     , library :: Maybe (Map T.Text PUConf)
-    , networks :: Map T.Text NetworkConf
+    , nets :: Map T.Text NetworkConf
     }
     deriving (Generic, Show)
 
@@ -109,8 +110,8 @@ saveConfig path conf = do
     createDirectoryIfMissing True path
     encodeFile (path <> "/microarch.yml") conf
 
-mkMicroarchitecture :: (Val v, Var x, ToJSON x) => MicroarchitectureConf -> BusNetwork T.Text x v Int
-mkMicroarchitecture MicroarchitectureConf{mock, ioSync, library, networks} =
+mkMicroarchitecture :: (Val v, Var x, ToJSON x) => MicroarchitectureConf -> BusNetworks T.Text x v Int
+mkMicroarchitecture MicroarchitectureConf{mock, ioSync, library, nets} =
     let addPU proto
             | proto = addCustomPrototype
             | otherwise = addCustom
@@ -142,7 +143,6 @@ mkMicroarchitecture MicroarchitectureConf{mock, ioSync, library, networks} =
                                     , master_sclk = PU.OutputPortTag sclk
                                     , master_cs = PU.OutputPortTag cs
                                     }
-        mkNetwork name net = modifyNetwork (busNetwork name ioSync) (build net)
-     in case M.toList networks of
-            [(name, net)] -> mkNetwork name net
-            _ -> error "multi-networks are not currently supported"
+        mkNetwork name net = modifyNetwork (busNetwork name) (build net)  
+        mkNetworks nets_ = map (\(name, net) -> mkNetwork name net) nets_
+     in busNetworks (mkNetworks $ M.toList nets) ioSync

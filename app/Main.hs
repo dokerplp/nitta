@@ -19,6 +19,7 @@ module Main (main) where
 import Control.Applicative
 import Control.Exception
 import Control.Monad (when)
+import Data.Aeson
 import Data.ByteString.Lazy.Char8 qualified as BS
 import Data.Default (def)
 import Data.Foldable (forM_)
@@ -242,15 +243,15 @@ main = do
                 received = [("u#0", map (\i -> read $ show $ sin ((2 :: Double) * 3.14 * 50 * 0.001 * i)) [0 .. toEnum n])]
                 ioSync_ = fromJust $ io_sync <|> ioSync <$> conf <|> Just Sync
                 confMa = mkMicroarchitecture <$> conf
-                ma :: BusNetwork T.Text T.Text (Attr (FX m b)) Int
+                ma :: BusNetworks T.Text T.Text (Attr (FX m b)) Int
                 ma
                     | auto_march && isJust confMa =
                         error $
                             "auto_march flag means that an empty march with default prototypes will be used. "
                                 <> "Remove march flag or specify prototypes list in config file and remove auto_march."
-                    | auto_march = microarchWithProtos ioSync_
+                    | auto_march = busNetworks'' microarchWithProtos ioSync_
                     | isJust confMa = fromJust confMa
-                    | otherwise = defMicroarch ioSync_
+                    | otherwise = busNetworks'' defMicroarch ioSync_
 
             infoM "NITTA" $ "will trace: " <> S.join ", " (map (show . tvVar) frTrace)
 
@@ -360,7 +361,8 @@ warningUnexpectedPort expect port =
             , " (maybe you need regenerate API by nitta-api-gen)"
             ]
 
-defMicroarch ioSync = defineNetwork "net1" ioSync $ do
+defMicroarch :: (UnitTag tag, VarValTime v x t, ToJSON v) => BusNetwork tag v x t
+defMicroarch = defineNetwork "net1" $ do
     addCustom "fram1" (framWithSize 16) FramIO
     addCustom "fram2" (framWithSize 32) FramIO
     add "shift" ShiftIO
@@ -375,7 +377,8 @@ defMicroarch ioSync = defineNetwork "net1" ioSync $ do
             , slave_cs = InputPortTag "cs"
             }
 
-microarchWithProtos ioSync = defineNetwork "net1" ioSync $ do
+microarchWithProtos :: (UnitTag tag, VarValTime v x t, ToJSON v) => BusNetwork tag v x t
+microarchWithProtos = defineNetwork "net1" $ do
     addCustomPrototype "fram{x}" (framWithSize 32) FramIO
     addPrototype "shift{x}" ShiftIO
     addPrototype "mul{x}" MultiplierIO

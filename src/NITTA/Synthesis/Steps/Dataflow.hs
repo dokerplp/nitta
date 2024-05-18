@@ -24,7 +24,7 @@ import NITTA.Intermediate.Types (
     Variables (variables),
     WithFunctions (functions),
  )
-import NITTA.Model.Networks.Bus (BusNetwork)
+import NITTA.Model.Networks.Bus (BusNetworks)
 import NITTA.Model.Problems.Dataflow (
     DataflowProblem (dataflowDecision),
     DataflowSt (..),
@@ -64,8 +64,8 @@ instance ToJSON DataflowMetrics
 instance
     (UnitTag tag, VarValTime v x t) =>
     SynthesisDecisionCls
-        (SynthesisState (TargetSystem (BusNetwork tag v x t) tag v x t) tag v x t)
-        (TargetSystem (BusNetwork tag v x t) tag v x t)
+        (SynthesisState (TargetSystem (BusNetworks tag v x t) tag v x t) tag v x t)
+        (TargetSystem (BusNetworks tag v x t) tag v x t)
         (DataflowSt tag v (TimeConstraint t))
         (DataflowSt tag v (Interval t))
         DataflowMetrics

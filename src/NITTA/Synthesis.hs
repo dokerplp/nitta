@@ -110,7 +110,7 @@ testing purpose.
 data TargetSynthesis tag v x t = TargetSynthesis
     { tName :: String
     -- ^ target name, used for top level module name and project path
-    , tMicroArch :: BusNetwork tag v x t
+    , tMicroArch :: BusNetworks tag v x t
     -- ^ composition of processor units, IO ports and its interconnect
     , tSourceCode :: Maybe Text
     -- ^ optional application source code (lua)
@@ -164,7 +164,7 @@ synthesizeTargetSystem ::
         ( DefTree tag v x t
         , Either
             String
-            (Project (BusNetwork tag v x t) v x)
+            (Project (BusNetworks tag v x t) v x)
         )
 synthesizeTargetSystem
     TargetSynthesis
@@ -229,7 +229,7 @@ synthesizeTargetSystem
                             , pInProjectNittaPath
                             , pAbsNittaPath = pwd </> tPath </> tName </> pInProjectNittaPath
                             , pUnit = targetUnit leaf
-                            , pUnitEnv = bnEnv $ targetUnit leaf
+                            , pUnitEnv = bnsEnv $ targetUnit leaf
                             , -- because application algorithm can be refactored we need to use
                               -- synthesised version
                               pTestCntx = simulateDataFlowGraph tSimulationCycleN def tReceivedValues $ targetDFG leaf

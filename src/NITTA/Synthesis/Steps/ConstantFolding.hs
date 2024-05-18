@@ -32,8 +32,8 @@ instance ToJSON ConstantFoldingMetrics
 instance
     (UnitTag tag, VarValTime v x t) =>
     SynthesisDecisionCls
-        (SynthesisState (TargetSystem (BusNetwork tag v x t) tag v x t) tag v x t)
-        (TargetSystem (BusNetwork tag v x t) tag v x t)
+        (SynthesisState (TargetSystem (BusNetworks tag v x t) tag v x t) tag v x t)
+        (TargetSystem (BusNetworks tag v x t) tag v x t)
         (ConstantFolding v x)
         (ConstantFolding v x)
         ConstantFoldingMetrics

@@ -76,8 +76,8 @@ instance ToJSON BindMetrics
 instance
     (UnitTag tag, VarValTime v x t) =>
     SynthesisDecisionCls
-        (SynthesisState (TargetSystem (BusNetwork tag v x t) tag v x t) tag v x t)
-        (TargetSystem (BusNetwork tag v x t) tag v x t)
+        (SynthesisState (TargetSystem (BusNetworks tag v x t) tag v x t) tag v x t)
+        (TargetSystem (BusNetworks tag v x t) tag v x t)
         (Bind tag v x)
         (Bind tag v x)
         BindMetrics
@@ -172,8 +172,8 @@ waitingTimeOfVariables net =
     , variable <- S.elems (variables srcEp S.\\ unionsMap (variables . snd) dfTargets)
     ]
 
-optionsAfterBind f tag TargetSystem{mUnit = BusNetwork{bnPus}} =
-    case tryBind f (bnPus M.! tag) of
+optionsAfterBind f tag TargetSystem{mUnit} =
+    case tryBind f (bnPus' mUnit M.! tag) of
         Right pu' -> filter (\(EndpointSt act _) -> act `optionOf` f) $ endpointOptions pu'
         _ -> []
     where

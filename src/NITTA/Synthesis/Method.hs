@@ -31,7 +31,7 @@ import Data.Map.Strict qualified as M
 import Data.Text (Text)
 import Data.Typeable
 import Debug.Trace
-import NITTA.Model.Networks.Bus (BusNetwork)
+import NITTA.Model.Networks.Bus (BusNetworks)
 import NITTA.Model.ProcessorUnits
 import NITTA.Model.TargetSystem
 import NITTA.Synthesis.Explore
@@ -220,7 +220,7 @@ topDownByScoreSynthesisIO' heap step depthCoeffBase limit scoreKey ctx currentNo
 
 selectSubForestIO ::
     ( SynthesisMethodConstraints tag v x t
-    , m ~ TargetSystem (BusNetwork tag v x t) tag v x t
+    , m ~ TargetSystem (BusNetworks tag v x t) tag v x t
     , ctx ~ SynthesisState m tag v x t
     ) =>
     (SynthesisDecision ctx m -> Bool) ->

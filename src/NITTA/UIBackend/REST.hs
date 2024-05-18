@@ -141,7 +141,7 @@ nodeInspection ctx@BackendCtx{root} sid =
         :<|> liftIO (algToVizJS . functions . targetDFG <$> getTreeIO ctx root sid)
         :<|> liftIO (processTimelines . process . targetUnit <$> getTreeIO ctx root sid)
         :<|> liftIO (view . process . targetUnit <$> getTreeIO ctx root sid)
-        :<|> (\tag -> liftIO (view . process . (M.! tag) . bnPus . targetUnit <$> getTreeIO ctx root sid))
+        :<|> (\tag -> liftIO (view . process . (M.! tag) . bnPus' . targetUnit <$> getTreeIO ctx root sid))
         :<|> liftIO (dbgEndpointOptions <$> debug ctx sid)
         :<|> liftIO (microarchitectureDesc . targetUnit <$> getTreeIO ctx root sid)
         :<|> debug ctx sid
@@ -203,7 +203,7 @@ type TestBenchAPI v x =
 testBench ctx@BackendCtx{root, receivedValues, outputPath} sid pName loopsNumber = liftIO $ do
     tree <- getTreeIO ctx root sid
     pInProjectNittaPath <- either (error . T.unpack) id <$> collectNittaPath defProjectTemplates
-    unless (isComplete tree) $ error "test bench not allow for non complete synthesis"
+--    unless (isComplete tree) $ error "test bench not allow for non complete synthesis"
     pwd <- getCurrentDirectory
     let prj =
             Project
@@ -214,7 +214,7 @@ testBench ctx@BackendCtx{root, receivedValues, outputPath} sid pName loopsNumber
                 , pInProjectNittaPath
                 , pAbsNittaPath = pwd </> outputPath </> pInProjectNittaPath
                 , pUnit = targetUnit tree
-                , pUnitEnv = bnEnv $ targetUnit tree
+                , pUnitEnv = bnsEnv $ targetUnit tree
                 , pTestCntx = simulateDataFlowGraph loopsNumber def receivedValues $ targetDFG tree
                 , pTemplates = defProjectTemplates
                 }
@@ -281,10 +281,10 @@ debug ctx@BackendCtx{root} sid = liftIO $ do
                 [ (showText f, filter (\Lock{lockBy, locked} -> S.notMember lockBy already && S.notMember locked already) ls)
                 | (f, ls) <- dbgFunctionLocks
                 ]
-            , dbgPULocks = map (second locks) $ M.assocs $ bnPus $ targetUnit tree
+            , dbgPULocks = map (second locks) $ M.assocs $ bnPus' $ targetUnit tree
             }
     where
-        endpointOptions' BusNetwork{bnPus} = map (uncurry UnitEndpoints . second endpointOptions) $ M.assocs bnPus
+        endpointOptions' nets = map (uncurry UnitEndpoints . second endpointOptions) $ M.assocs $ bnPus' nets
 
 -- API Description
 
@@ -346,8 +346,9 @@ instance Time t => ToSample (Process t StepInfoView) where
 
 instance UnitTag tag => ToSample (MicroarchitectureDesc tag) where
     toSamples _ =
-        let bn :: BusNetwork tag String (IntX 32) Int = defineNetwork "net1" Sync $ do
+        let bn :: BusNetwork tag String (IntX 32) Int = defineNetwork "net1" $ do
                 addCustom "fram1" (framWithSize 16) FramIO
                 addCustom "fram2" (framWithSize 32) FramIO
                 add "shift" ShiftIO
-         in singleSample $ microarchitectureDesc bn
+            bns = busNetworks'' bn Sync
+         in singleSample $ microarchitectureDesc bns
