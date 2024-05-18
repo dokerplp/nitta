@@ -144,7 +144,7 @@ instance (UnitTag tag, VarValTime v x t) => ProcessorUnit (BusNetworks tag v x t
 
 
 instance (UnitTag tag, VarValTime v x t) => BindProblem (BusNetworks tag v x t) tag v x where
-    bindOptions BusNetworks{bns} = mergeMap bindOptions bns
+    bindOptions BusNetworks{bns} = bindOptions $ mergeNets bns
     bindDecision nets@BusNetworks{bns} x = nets { bns = map (\n -> bindDecision n x) bns }
 
 instance (UnitTag tag, VarValTime v x t) => BreakLoopProblem (BusNetworks tag v x t) v x where
